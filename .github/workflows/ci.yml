@@ -53,6 +53,13 @@ jobs:
           alembic current
           alembic check
 
+      - name: Run focused tesis regression checks
+        env:
+          DATABASE_URL: postgresql://user:password@localhost:5432/buildwise
+          AUTH_SECRET_KEY: buildwise-ci-test-secret
+          ENVIRONMENT: test
+        run: pytest -q tests/test_series.py tests/test_temporal_leakage_tesis.py -o addopts=''
+
       - name: Run tests with coverage
         env:
           DATABASE_URL: postgresql://user:password@localhost:5432/buildwise
