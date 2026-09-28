@@ -1,8 +1,8 @@
 """Regresiones metodologicas de la evaluacion de tesis: informacion ex ante."""
 from dataclasses import replace
-from importlib.util import find_spec
 from datetime import date
 from decimal import Decimal
+from importlib.util import find_spec
 from types import SimpleNamespace
 
 import pandas as pd
