@@ -362,7 +362,7 @@ def _features_anomalia_mensual(
     mad_6 = _mad(precios_previos_6)
     precio_estacional = float(mismo_mes_anterior.precio_promedio_normalizado) if mismo_mes_anterior else float(anterior.precio_promedio_normalizado)
     desvio_estacional_anterior = _gap_porcentual(float(anterior.precio_promedio_normalizado), precio_estacional)
-"    pendiente_local = _gap_porcentual(float(anterior.precio_promedio_normalizado), float(hace_3.precio_promedio_normalizado))
+    pendiente_local = _gap_porcentual(float(anterior.precio_promedio_normalizado), float(hace_3.precio_promedio_normalizado))
     return [
         float(index),
         float(punto.fecha.month),
