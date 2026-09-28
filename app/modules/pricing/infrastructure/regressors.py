@@ -134,3 +134,39 @@ def proyectar_regresores_futuros(pd, regresores_historicos, fechas_futuras, colu
         ]
 
     return pd.DataFrame(futuros)
+
+
+def preparar_regresores_para_fold(pd, train_df, test_df, regresores_df, columnas: tuple[str, ...]):
+    """Reconstruye regresores ex ante: nunca lee los valores reales del test."""
+    if regresores_df is None or not columnas:
+        raise ExternalRegressorError("Se requieren regresores historicos y columnas para evaluar este fold.")
+    fecha_corte = pd.to_datetime(train_df["ds"]).max()
+    historicos = regresores_df[regresores_df["ds"] <= fecha_corte][["ds", *columnas]].copy().sort_values("ds")
+    if historicos.empty:
+        raise ExternalRegressorError("No hay regresores disponibles hasta el corte del fold.")
+
+    train_reg = train_df[["ds", "y"]].merge(historicos, on="ds", how="left").sort_values("ds")
+    for columna in columnas:
+        # Solo se imputan valores de entrenamiento, nunca se rellena con el test.
+        train_reg[columna] = train_reg[columna].ffill()
+        if train_reg[columna].isna().any():
+            raise ExternalRegressorError(f"Faltan valores de entrenamiento del regresor {columna}.")
+
+    # Si el ultimo regresor disponible es anterior al corte, proyectar tambien
+    # los meses intermedios para no desplazar artificialmente el horizonte.
+    ultimo_regresor = pd.to_datetime(historicos["ds"]).max()
+    fechas_a_proyectar = pd.date_range(
+        start=ultimo_regresor + pd.DateOffset(months=1),
+        end=pd.to_datetime(test_df["ds"]).max(),
+        freq="MS",
+    )
+    estimados = proyectar_regresores_futuros(pd, historicos, fechas_a_proyectar, columnas)
+    futuro_test = test_df[["ds"]].merge(estimados, on="ds", how="left")
+    if futuro_test[list(columnas)].isna().any().any():
+        raise ExternalRegressorError("No fue posible proyectar todos los regresores del fold.")
+
+    futuro = pd.concat(
+        [train_reg[["ds", *columnas]], futuro_test[["ds", *columnas]]],
+        ignore_index=True,
+    )
+    return train_reg[["ds", "y", *columnas]], futuro
