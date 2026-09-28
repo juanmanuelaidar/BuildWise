@@ -29,7 +29,11 @@ from app.modules.pricing.domain.exceptions import (
 from app.modules.pricing.domain.repositories import PricingRepository
 from app.modules.pricing.infrastructure.forecast_runtime import configurar_cmdstan, importar_dependencias_forecast
 from app.modules.pricing.infrastructure.forecast_snapshots import cargar_forecast_snapshot, guardar_forecast_snapshot
-from app.modules.pricing.infrastructure.regressors import cargar_regresores_mensuales, proyectar_regresores_futuros
+from app.modules.pricing.infrastructure.regressors import (
+    cargar_regresores_mensuales,
+    preparar_regresores_para_fold,
+    proyectar_regresores_futuros,
+)
 from app.modules.pricing.interfaces.schemas import ForecastMetricasRead, ForecastPuntoRead, ForecastSelectionRead
 from app.shared.config.settings import settings
 
@@ -344,14 +348,11 @@ def backtesting_forecast(pd, Prophet, dataset, regresores_df, horizonte_meses: i
         test_df = _a_dataframe(pd, fold.test)
         modelo = Prophet(stan_backend="CMDSTANPY", **BEST_PROPHET_CONFIG)
         if regresores:
-            full_df = pd.concat([train_df[["ds", "y"]], test_df[["ds", "y"]]], ignore_index=True)
-            full_df = full_df.merge(regresores_df, on="ds", how="left")
+            train_reg, futuro = preparar_regresores_para_fold(
+                pd, train_df, test_df, regresores_df, regresores
+            )
             for columna in regresores:
-                full_df[columna] = full_df[columna].ffill().bfill()
                 modelo.add_regressor(columna)
-
-            train_reg = full_df.iloc[: len(train_df)][["ds", "y", *regresores]].copy()
-            futuro = full_df[["ds", *regresores]].copy()
             modelo.fit(train_reg)
             forecast = modelo.predict(futuro)[["ds", "yhat"]]
         else:
