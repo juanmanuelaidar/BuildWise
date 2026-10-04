@@ -344,16 +344,41 @@ def backtesting_forecast(pd, Prophet, dataset, regresores_df, horizonte_meses: i
         test_df = _a_dataframe(pd, fold.test)
         modelo = Prophet(stan_backend="CMDSTANPY", **BEST_PROPHET_CONFIG)
         if regresores:
-            full_df = pd.concat([train_df[["ds", "y"]], test_df[["ds", "y"]]], ignore_index=True)
-            full_df = full_df.merge(regresores_df, on="ds", how="left")
+            fecha_corte = pd.to_datetime(fold.train[-1].ds)
+            regresores_historicos = regresores_df[
+                regresores_df["ds"] <= fecha_corte
+            ][["ds", *regresores]].sort_values("ds").copy()
+            if regresores_historicos.empty:
+                raise HTTPException(
+                    status_code=422,
+                    detail="No hay regresores externos disponibles hasta la fecha de corte del backtesting.",
+                )
+
             for columna in regresores:
-                full_df[columna] = full_df[columna].ffill().bfill()
+                regresores_historicos[columna] = regresores_historicos[columna].ffill().bfill()
                 modelo.add_regressor(columna)
 
-            train_reg = full_df.iloc[: len(train_df)][["ds", "y", *regresores]].copy()
-            futuro = full_df[["ds", *regresores]].copy()
-            modelo.fit(train_reg)
-            forecast = modelo.predict(futuro)[["ds", "yhat"]]
+            train_reg = train_df.merge(regresores_historicos, on="ds", how="left")
+            for columna in regresores:
+                train_reg[columna] = train_reg[columna].ffill().bfill()
+                if train_reg[columna].isna().any():
+                    raise HTTPException(
+                        status_code=422,
+                        detail=(
+                            f"No hay valores suficientes del regresor {columna} "
+                            "hasta la fecha de corte del backtesting."
+                        ),
+                    )
+
+            fechas_test = [fila.ds for fila in fold.test]
+            futuro = proyectar_regresores_futuros(
+                pd,
+                regresores_historicos,
+                fechas_test,
+                regresores,
+            )
+            modelo.fit(train_reg[["ds", "y", *regresores]].copy())
+            forecast = modelo.predict(futuro[["ds", *regresores]].copy())[["ds", "yhat"]]
         else:
             modelo.fit(train_df)
             futuro = modelo.make_future_dataframe(periods=len(test_df), freq="MS")
