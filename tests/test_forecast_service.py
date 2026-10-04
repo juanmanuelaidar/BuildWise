@@ -672,3 +672,86 @@ def test_backtesting_forecast_with_regressors(monkeypatch):
     assert metrics.mape == Decimal("0.00")
     assert mock_prophet_instance.add_regressor.called
     assert mock_prophet_instance.fit.called
+
+
+def test_backtesting_con_regresores_no_usa_valores_reales_del_periodo_test(monkeypatch):
+    import pandas as pd
+
+    from app.modules.pricing.application.backtesting import TimeSeriesFold
+    from app.modules.pricing.application.forecast_service import backtesting_forecast
+
+    def month(year: int, month_index: int) -> date:
+        zero_based = month_index - 1
+        return date(year + zero_based // 12, zero_based % 12 + 1, 1)
+
+    dataset = [
+        ProphetRow(ds=month(2022, i), y=100.0)
+        for i in range(1, 28)
+    ]
+    fold = TimeSeriesFold(indice=1, train=dataset[:24], test=dataset[24:27])
+    regresores_df = pd.DataFrame(
+        {
+            "ds": [pd.to_datetime(row.ds) for row in dataset],
+            "r1": [float(i) for i in range(1, 25)] + [9999.0, 9999.0, 9999.0],
+        }
+    )
+
+    monkeypatch.setattr(
+        "app.modules.pricing.application.forecast_service.construir_folds_temporales",
+        lambda *_args, **_kwargs: [fold],
+    )
+
+    proyectados = pd.DataFrame(
+        {
+            "ds": [pd.to_datetime(row.ds) for row in fold.test],
+            "r1": [25.0, 26.0, 27.0],
+        }
+    )
+    llamada_proyeccion = {}
+
+    def fake_proyectar(_pd, historicos, fechas_futuras, columnas):
+        llamada_proyeccion["max_ds"] = historicos["ds"].max()
+        llamada_proyeccion["fechas"] = list(fechas_futuras)
+        llamada_proyeccion["columnas"] = columnas
+        assert 9999.0 not in historicos["r1"].tolist()
+        return proyectados.copy()
+
+    monkeypatch.setattr(
+        "app.modules.pricing.application.forecast_service.proyectar_regresores_futuros",
+        fake_proyectar,
+    )
+
+    class FakeProphet:
+        def __init__(self, **_kwargs):
+            self.future_seen = None
+
+        def add_regressor(self, _name):
+            return None
+
+        def fit(self, _df):
+            return self
+
+        def predict(self, future):
+            self.future_seen = future.copy()
+            assert future["r1"].tolist() == [25.0, 26.0, 27.0]
+            assert 9999.0 not in future["r1"].tolist()
+            return pd.DataFrame(
+                {
+                    "ds": future["ds"],
+                    "yhat": [100.0] * len(future),
+                }
+            )
+
+    metrics = backtesting_forecast(
+        pd,
+        FakeProphet,
+        dataset,
+        regresores_df,
+        3,
+        ("r1",),
+    )
+
+    assert llamada_proyeccion["max_ds"] == pd.Timestamp("2023-12-01")
+    assert llamada_proyeccion["fechas"] == [row.ds for row in fold.test]
+    assert llamada_proyeccion["columnas"] == ("r1",)
+    assert metrics.mape == Decimal("0.00")
