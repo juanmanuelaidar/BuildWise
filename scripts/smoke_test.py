@@ -2,6 +2,7 @@
 import json
 import os
 import sys
+from decimal import Decimal
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -59,6 +60,30 @@ def main() -> None:
     history = expect("GET", f"/materiales/{cement['id']}/precios", 200, token=client_token)
     if not history:
         raise AssertionError("El historico de Cemento Portland esta vacio")
+
+    mvp_materials = [material for material in materials if material["nombre"] in required]
+    for material in mvp_materials:
+        forecast = expect("GET", f"/materiales/{material['id']}/forecast?horizonte_meses=3", 200, token=client_token)
+        if len(forecast.get("puntos", [])) != 3:
+            raise AssertionError(f"Forecast incompleto para {material['nombre']}")
+        selection = forecast.get("seleccion_modelo", {})
+        if not selection.get("no_calibrado") or not selection.get("advertencia"):
+            raise AssertionError(f"Faltan limites de calibracion para {material['nombre']}")
+
+    optimization = expect(
+        "POST", "/compras/optimizar-presupuesto", 200, token=client_token,
+        payload={
+            "presupuesto_total": "15.00", "horizonte_meses": 3,
+            "materiales": [{"material_id": material["id"], "cantidad_objetivo": "1.0000", "criticidad": "alta"} for material in mvp_materials],
+        },
+    )
+    if len(optimization["items"]) != len(mvp_materials):
+        raise AssertionError("La optimizacion excluyo materiales del bootstrap")
+    if Decimal(optimization["presupuesto_utilizado"]) > Decimal("15.00"):
+        raise AssertionError("El presupuesto publicado excede el presupuesto disponible")
+    for item in optimization["items"]:
+        if Decimal(item["cantidad_recomendada_comprar_ahora"]) + Decimal(item["cantidad_recomendada_postergar"]) != Decimal(item["cantidad_objetivo"]):
+            raise AssertionError("La optimizacion no conserva la cantidad objetivo")
 
     conversation = expect("POST", "/chat/conversaciones", 201, token=client_token, payload={"titulo": "Smoke API"})
     conversation_id = conversation["id"]
