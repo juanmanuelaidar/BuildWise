@@ -19,7 +19,14 @@ def importar_dependencias_forecast():
 def configurar_cmdstan(cmdstanpy, CmdStanPyBackend, IStanBackend) -> None:
     cmdstan_global = Path.home() / ".cmdstan" / CMDSTAN_VERSION
     if not cmdstan_global.exists():
-        raise ForecastRuntimeError("No se encontro CmdStan para correr Prophet.")
+        # The pinned Prophet wheel includes its own precompiled model/runtime.
+        # Use it without downloading or compiling an unrelated global version.
+        import prophet
+
+        bundled = Path(prophet.__file__).parent / "stan_model" / f"cmdstan-{CmdStanPyBackend.CMDSTAN_VERSION}"
+        if not bundled.exists():
+            raise ForecastRuntimeError("No se encontro CmdStan para correr Prophet.")
+        cmdstan_global = bundled
 
     cmdstanpy.set_cmdstan_path(str(cmdstan_global))
 

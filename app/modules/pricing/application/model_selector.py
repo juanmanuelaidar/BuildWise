@@ -1,22 +1,20 @@
 from __future__ import annotations
 
 import csv
+import hashlib
+import json
 from dataclasses import dataclass, replace
 from decimal import Decimal
+from math import isfinite
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
-BENCHMARK_SOURCE_FILES: dict[str, tuple[Path, ...]] = {
-    "cemento-portland": (PROJECT_ROOT / "tmp/experiments/cemento_forecast_benchmark_master.csv",),
-    "pastina": (PROJECT_ROOT / "tmp/experiments/pastina_forecast_plateau.csv",),
-    "membrana-megaflex": (PROJECT_ROOT / "tmp/experiments/membrana_megaflex_forecast_plateau.csv",),
+BENCHMARK_DIR = PROJECT_ROOT / "db/benchmarks/mvp_2026_03"
+BENCHMARK_SOURCE_FILES = {
+    key: (BENCHMARK_DIR / "benchmarks.csv",)
+    for key in ("cemento-portland", "pastina", "membrana-megaflex")
 }
-
-MATERIAL_CONFIDENCE = {
-    "cemento-portland": "alta",
-    "pastina": "media",
-    "membrana-megaflex": "media-baja",
-}
+EVALUATION_PROTOCOL = "ex-ante-v2"
 
 MODEL_REGRESSORS: dict[str, tuple[str, ...]] = {
     "prophet_base": (),
@@ -94,7 +92,8 @@ def _parse_float(raw: str | None) -> float | None:
     if raw in {None, "", "-", "skip"}:
         return None
     try:
-        return float(raw)
+        value = float(raw)
+        return value if isfinite(value) else None
     except ValueError:
         return None
 
@@ -121,224 +120,93 @@ def _build_selection(
     mae: float,
     folds: int,
 ) -> ForecastModelSelection:
-    regresores = MODEL_REGRESSORS[modelo]
+    # Reference errors describe this frozen experiment. Estimated target prices,
+    # few folds, and failure to beat persistence cannot support strong decisions.
+    limitations = ["Seleccion exploratoria, sin test externo independiente."]
+    if material_key != MATERIAL_KEY_CEMENTO_PORTLAND:
+        limitations.append("La serie incluye precios estimados; el error no valida precios reales independientes.")
+    if folds < 3:
+        limitations.append("Solo hay dos particiones para este horizonte.")
     return ForecastModelSelection(
         material_key=material_key,
         horizonte_meses=horizonte_meses,
         modelo=modelo,
-        regresores=regresores,
+        regresores=MODEL_REGRESSORS[modelo],
         mape=Decimal(f"{mape:.2f}"),
         mae=Decimal(f"{mae:.2f}"),
         folds=folds,
-        confiabilidad=MATERIAL_CONFIDENCE[material_key],
+        confiabilidad=CONFIABILIDAD_NO_CALIBRADA,
         origen_decision=ORIGEN_DECISION_MATERIAL_HORIZONTE,
-        justificacion=(
-            "Configuracion recomendada segun benchmark consolidado y "
-            "seleccionada por menor MAPE dentro de las variantes ejecutables por el runtime."
-        ),
-        no_calibrado=False,
+        justificacion=" ".join(limitations),
+        no_calibrado=True,
     )
+
+
+def _load_manifest() -> dict:
+    try:
+        manifest = json.loads((BENCHMARK_DIR / "manifest.json").read_text(encoding="utf-8"))
+        if manifest.get("evaluation_protocol") != EVALUATION_PROTOCOL:
+            return {}
+        for relative, expected in manifest["sources"].items():
+            if hashlib.sha256((PROJECT_ROOT / relative).read_bytes()).hexdigest() != expected:
+                return {}
+        if hashlib.sha256((BENCHMARK_DIR / "benchmarks.csv").read_bytes()).hexdigest() != manifest["benchmark_sha256"]:
+            return {}
+        return manifest
+    except (OSError, ValueError, KeyError, TypeError):
+        return {}
+
+
+_BENCHMARK_MANIFEST = _load_manifest()
+BENCHMARK_DATASET_SIGNATURES = {
+    key: value["dataset_signature"]
+    for key, value in _BENCHMARK_MANIFEST.get("materials", {}).items()
+}
 
 
 def _load_benchmark_selections() -> tuple[dict[tuple[str, int], ForecastModelSelection], dict[str, ForecastModelSelection]]:
     exactas: dict[tuple[str, int], ForecastModelSelection] = {}
     por_material: dict[str, ForecastModelSelection] = {}
-
+    if not _BENCHMARK_MANIFEST:
+        return exactas, por_material
     for material_key, paths in BENCHMARK_SOURCE_FILES.items():
         for path in paths:
-            if not path.exists():
-                continue
             with path.open("r", encoding="utf-8", newline="") as handle:
-                reader = csv.DictReader(handle)
-                rows = list(reader)
-
+                rows = list(csv.DictReader(handle))
+            baselines = {
+                _parse_int(row.get("horizonte_meses")): _parse_float(row.get("MAPE"))
+                for row in rows if row.get("material_key") == material_key and row.get("nombre_modelo") == "naive_last"
+            }
             for raw in rows:
+                if raw.get("material_key") != material_key or raw.get("evaluation_protocol") != EVALUATION_PROTOCOL:
+                    continue
+                if raw.get("dataset_signature") != BENCHMARK_DATASET_SIGNATURES.get(material_key):
+                    continue
                 modelo = raw.get("nombre_modelo", "").strip()
                 if not _benchmark_is_supported(modelo):
                     continue
-
                 horizonte = _parse_int(raw.get("horizonte_meses"))
-                mape = _parse_float(raw.get("MAPE"))
-                mae = _parse_float(raw.get("MAE"))
+                mape, mae = _parse_float(raw.get("MAPE")), _parse_float(raw.get("MAE"))
                 folds = _parse_int(raw.get("folds"))
-                if horizonte is None or mape is None or mae is None or folds is None:
+                if horizonte is None or mape is None or mae is None or folds is None or folds < 1 or min(mape, mae) < 0:
                     continue
-
-                selection = _build_selection(
-                    material_key=material_key,
-                    horizonte_meses=horizonte,
-                    modelo=modelo,
-                    mape=mape,
-                    mae=mae,
-                    folds=folds,
-                )
+                selection = _build_selection(material_key=material_key, horizonte_meses=horizonte, modelo=modelo, mape=mape, mae=mae, folds=folds)
+                baseline = baselines.get(horizonte)
+                if baseline is not None and mape >= baseline:
+                    selection = replace(selection, justificacion=selection.justificacion + " No mejora el baseline de ultimo precio observado.")
                 key = (material_key, horizonte)
                 current = exactas.get(key)
                 if current is None or (selection.mape, selection.mae) < (current.mape, current.mae):
                     exactas[key] = selection
-
     for (material_key, _horizonte), selection in exactas.items():
         current = por_material.get(material_key)
         if current is None or (selection.mape, selection.mae) < (current.mape, current.mae):
             por_material[material_key] = selection
-
     return exactas, por_material
 
 
-_BENCHMARK_SELECCIONES_EXACTAS, _BENCHMARK_SELECCIONES_POR_MATERIAL = _load_benchmark_selections()
+_SELECCIONES_EXACTAS, _SELECCIONES_POR_MATERIAL = _load_benchmark_selections()
 
-
-_LEGACY_SELECCIONES_EXACTAS: dict[tuple[str, int], ForecastModelSelection] = {
-    (MATERIAL_KEY_CEMENTO_PORTLAND, 3): ForecastModelSelection(
-        material_key=MATERIAL_KEY_CEMENTO_PORTLAND,
-        horizonte_meses=3,
-        modelo="prophet_ipim_icc_var_materials",
-        regresores=("ipim_nivel_general", "icc_var_materials"),
-        mape=Decimal("4.22"),
-        mae=Decimal("5.82"),
-        folds=9,
-        confiabilidad=CONFIABILIDAD_ALTA,
-        origen_decision=ORIGEN_DECISION_MATERIAL_HORIZONTE,
-        justificacion=(
-            "Configuracion recomendada para Cemento Portland a 3 meses segun benchmark "
-            "documentado, con mejor promedio observado y mejora consistente frente al baseline."
-        ),
-        no_calibrado=False,
-    ),
-    (MATERIAL_KEY_CEMENTO_PORTLAND, 6): ForecastModelSelection(
-        material_key=MATERIAL_KEY_CEMENTO_PORTLAND,
-        horizonte_meses=6,
-        modelo="prophet_ipim_icc_var_materials",
-        regresores=("ipim_nivel_general", "icc_var_materials"),
-        mape=Decimal("5.52"),
-        mae=Decimal("7.58"),
-        folds=9,
-        confiabilidad=CONFIABILIDAD_ALTA,
-        origen_decision=ORIGEN_DECISION_MATERIAL_HORIZONTE,
-        justificacion=(
-            "Configuracion recomendada para Cemento Portland a 6 meses segun benchmark "
-            "documentado, con mejor promedio observado y estabilidad aceptable."
-        ),
-        no_calibrado=False,
-    ),
-    (MATERIAL_KEY_CEMENTO_PORTLAND, 12): ForecastModelSelection(
-        material_key=MATERIAL_KEY_CEMENTO_PORTLAND,
-        horizonte_meses=12,
-        modelo="prophet_ipim_icc_var_materials",
-        regresores=("ipim_nivel_general", "icc_var_materials"),
-        mape=Decimal("4.51"),
-        mae=Decimal("6.36"),
-        folds=9,
-        confiabilidad=CONFIABILIDAD_ALTA,
-        origen_decision=ORIGEN_DECISION_MATERIAL_HORIZONTE,
-        justificacion=(
-            "Configuracion recomendada para Cemento Portland a 12 meses segun benchmark "
-            "documentado, con mejor promedio observado y mejora consistente frente al baseline."
-        ),
-        no_calibrado=False,
-    ),
-    (MATERIAL_KEY_PASTINA, 3): ForecastModelSelection(
-        material_key=MATERIAL_KEY_PASTINA,
-        horizonte_meses=3,
-        modelo="prophet_ipim_cac_labour_force",
-        regresores=("ipim_nivel_general", "cac_labour_force"),
-        mape=Decimal("4.27"),
-        mae=Decimal("97.97"),
-        folds=9,
-        confiabilidad=CONFIABILIDAD_MEDIA,
-        origen_decision=ORIGEN_DECISION_MATERIAL_HORIZONTE,
-        justificacion=(
-            "Configuracion recomendada para Pastina a 3 meses segun benchmark documentado, "
-            "con mejor promedio observado entre las variantes runtime soportadas."
-        ),
-        no_calibrado=False,
-    ),
-    (MATERIAL_KEY_PASTINA, 6): ForecastModelSelection(
-        material_key=MATERIAL_KEY_PASTINA,
-        horizonte_meses=6,
-        modelo="prophet_ipim_cac_labour_force",
-        regresores=("ipim_nivel_general", "cac_labour_force"),
-        mape=Decimal("5.26"),
-        mae=Decimal("115.97"),
-        folds=9,
-        confiabilidad=CONFIABILIDAD_MEDIA,
-        origen_decision=ORIGEN_DECISION_MATERIAL_HORIZONTE,
-        justificacion=(
-            "Configuracion recomendada para Pastina a 6 meses segun benchmark documentado, "
-            "con mejor promedio observado entre las variantes runtime soportadas."
-        ),
-        no_calibrado=False,
-    ),
-    (MATERIAL_KEY_PASTINA, 12): ForecastModelSelection(
-        material_key=MATERIAL_KEY_PASTINA,
-        horizonte_meses=12,
-        modelo="prophet_ipim_cac_labour_force",
-        regresores=("ipim_nivel_general", "cac_labour_force"),
-        mape=Decimal("6.98"),
-        mae=Decimal("154.11"),
-        folds=9,
-        confiabilidad=CONFIABILIDAD_MEDIA,
-        origen_decision=ORIGEN_DECISION_MATERIAL_HORIZONTE,
-        justificacion=(
-            "Configuracion recomendada para Pastina a 12 meses segun benchmark documentado, "
-            "con mejor promedio observado entre las variantes runtime soportadas."
-        ),
-        no_calibrado=False,
-    ),
-    (MATERIAL_KEY_MEMBRANA_MEGAFLEX, 3): ForecastModelSelection(
-        material_key=MATERIAL_KEY_MEMBRANA_MEGAFLEX,
-        horizonte_meses=3,
-        modelo="prophet_ipim_icc_var_materials",
-        regresores=("ipim_nivel_general", "icc_var_materials"),
-        mape=Decimal("8.08"),
-        mae=Decimal("656.08"),
-        folds=9,
-        confiabilidad=CONFIABILIDAD_MEDIA_BAJA,
-        origen_decision=ORIGEN_DECISION_MATERIAL_HORIZONTE,
-        justificacion=(
-            "Configuracion recomendada para Membrana Megaflex a 3 meses segun benchmark "
-            "documentado, con mejor promedio observado entre las variantes runtime soportadas."
-        ),
-        no_calibrado=False,
-    ),
-    (MATERIAL_KEY_MEMBRANA_MEGAFLEX, 6): ForecastModelSelection(
-        material_key=MATERIAL_KEY_MEMBRANA_MEGAFLEX,
-        horizonte_meses=6,
-        modelo="prophet_ipim_icc_var_materials",
-        regresores=("ipim_nivel_general", "icc_var_materials"),
-        mape=Decimal("9.97"),
-        mae=Decimal("777.44"),
-        folds=9,
-        confiabilidad=CONFIABILIDAD_MEDIA_BAJA,
-        origen_decision=ORIGEN_DECISION_MATERIAL_HORIZONTE,
-        justificacion=(
-            "Configuracion recomendada para Membrana Megaflex a 6 meses segun benchmark "
-            "documentado, con mejor promedio observado entre las variantes runtime soportadas."
-        ),
-        no_calibrado=False,
-    ),
-    (MATERIAL_KEY_MEMBRANA_MEGAFLEX, 12): ForecastModelSelection(
-        material_key=MATERIAL_KEY_MEMBRANA_MEGAFLEX,
-        horizonte_meses=12,
-        modelo="prophet_ipim_icc_var_materials",
-        regresores=("ipim_nivel_general", "icc_var_materials"),
-        mape=Decimal("13.57"),
-        mae=Decimal("1080.42"),
-        folds=9,
-        confiabilidad=CONFIABILIDAD_MEDIA_BAJA,
-        origen_decision=ORIGEN_DECISION_MATERIAL_HORIZONTE,
-        justificacion=(
-            "Configuracion recomendada para Membrana Megaflex a 12 meses segun benchmark "
-            "documentado, con mejor promedio observado entre las variantes runtime soportadas."
-        ),
-        no_calibrado=False,
-    ),
-}
-
-_SELECCIONES_EXACTAS = _BENCHMARK_SELECCIONES_EXACTAS or _LEGACY_SELECCIONES_EXACTAS
-_SELECCIONES_POR_MATERIAL = _BENCHMARK_SELECCIONES_POR_MATERIAL or {
-    material_key: selection for (material_key, _horizonte), selection in _SELECCIONES_EXACTAS.items()
-}
 
 _FALLBACK_GLOBAL = ForecastModelSelection(
     material_key="unknown",
@@ -369,6 +237,10 @@ def resolve_model_selection(material_key: str, horizonte_meses: int) -> Forecast
             por_material,
             material_key=material_key,
             horizonte_meses=horizonte_meses,
+            mape=None,
+            mae=None,
+            folds=None,
+            confiabilidad=CONFIABILIDAD_NO_CALIBRADA,
             origen_decision=ORIGEN_DECISION_MATERIAL_DEFAULT,
             justificacion=(
                 "Se reutiliza la mejor configuracion documentada para este material porque "

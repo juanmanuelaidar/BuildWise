@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import ROUND_FLOOR, ROUND_HALF_UP, Decimal
 
 from fastapi import HTTPException
 from pulp import PULP_CBC_CMD, LpMinimize, LpProblem, LpStatus, LpVariable, lpSum, value
@@ -29,6 +29,7 @@ PESO_CRITICIDAD = {
 }
 
 ESTADO_OPTIMAL = "OPTIMAL"
+QUANTITY_STEP = Decimal("0.0001")
 
 
 @dataclass(frozen=True)
@@ -209,7 +210,8 @@ def optimizar_compra_items(
         variables_ahora[candidate.material_id] = LpVariable(
             f"x_ahora_{candidate.material_id}",
             lowBound=0,
-            upBound=float(candidate.cantidad_objetivo),
+            upBound=float(candidate.cantidad_objetivo / QUANTITY_STEP),
+            cat="Integer",
         )
         variables_futuro[candidate.material_id] = LpVariable(
             f"x_futuro_{candidate.material_id}",
@@ -225,21 +227,21 @@ def optimizar_compra_items(
             float(candidate.ahorro_unitario_estimado * candidate.peso_criticidad) * 1_000_000
             - float(candidate.precio_actual)
         )
-        * variables_ahora[candidate.material_id]
+        * float(QUANTITY_STEP) * variables_ahora[candidate.material_id]
         for candidate in candidates
     )
     problem += lpSum(
-        float(candidate.precio_actual) * variables_ahora[candidate.material_id] for candidate in candidates
+        float(candidate.precio_actual * QUANTITY_STEP) * variables_ahora[candidate.material_id] for candidate in candidates
     ) <= float(presupuesto_total)
 
     for candidate in candidates:
         problem += (
-            variables_ahora[candidate.material_id] + variables_futuro[candidate.material_id]
+            float(QUANTITY_STEP) * variables_ahora[candidate.material_id] + variables_futuro[candidate.material_id]
             == float(candidate.cantidad_objetivo)
         )
         if candidate.porcentaje_minimo_compra_inmediata is not None:
             problem += variables_ahora[candidate.material_id] >= float(
-                candidate.cantidad_objetivo * candidate.porcentaje_minimo_compra_inmediata
+                candidate.cantidad_objetivo * candidate.porcentaje_minimo_compra_inmediata / QUANTITY_STEP
             )
 
     status_code = problem.solve(PULP_CBC_CMD(msg=False))
@@ -252,10 +254,23 @@ def optimizar_compra_items(
     ahorro_total_estimado = Decimal("0")
     for candidate in candidates:
         valor_ahora = value(variables_ahora[candidate.material_id])
-        valor_futuro = value(variables_futuro[candidate.material_id])
-        cantidad_recomendada = _quantize_quantity(Decimal(f"{(valor_ahora or 0):.4f}"))
-        cantidad_postergada = _quantize_quantity(Decimal(f"{(valor_futuro or 0):.4f}"))
+        restante = presupuesto_total - presupuesto_utilizado
+        cantidad_recomendada = min(
+            Decimal(str(valor_ahora or 0)) * QUANTITY_STEP,
+            candidate.cantidad_objetivo,
+            restante / candidate.precio_actual,
+        ).quantize(Decimal("0.0001"), rounding=ROUND_FLOOR)
+        cantidad_recomendada = max(cantidad_recomendada, Decimal("0"))
         costo_compra_ahora = _quantize_amount(candidate.precio_actual * cantidad_recomendada)
+        # CBC uses floating point; the published Decimal plan must remain feasible
+        # after quantity and per-line currency rounding as well.
+        while costo_compra_ahora > restante and cantidad_recomendada > 0:
+            cantidad_recomendada -= Decimal("0.0001")
+            costo_compra_ahora = _quantize_amount(candidate.precio_actual * cantidad_recomendada)
+        minimo = candidate.cantidad_objetivo * (candidate.porcentaje_minimo_compra_inmediata or Decimal("0"))
+        if cantidad_recomendada < minimo:
+            raise HTTPException(status_code=422, detail="El presupuesto no permite representar la compra minima con la precision de cantidades admitida.")
+        cantidad_postergada = _quantize_quantity(candidate.cantidad_objetivo - cantidad_recomendada)
         costo_futuro_estimado = _quantize_amount(candidate.precio_proyectado_horizonte * cantidad_postergada)
         ahorro_total = _quantize_amount(candidate.ahorro_unitario_estimado * cantidad_recomendada)
         presupuesto_utilizado += costo_compra_ahora

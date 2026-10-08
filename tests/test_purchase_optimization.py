@@ -530,3 +530,36 @@ def test_endpoint_recomendacion_operativa_consolida_decision_trazable(monkeypatc
 def test_hu23_no_usa_ortools() -> None:
     source = inspect.getsource(purchase_optimization_module).lower()
     assert "ortools" not in source
+
+
+def test_precision_de_cantidades_no_excede_presupuesto_con_precio_alto():
+    candidate = _candidate(
+        material_id=1,
+        material_key="ejemplo",
+        cantidad_objetivo="1.0000",
+        precio_actual="100000.00",
+        precio_proyectado="120000.00",
+        criticidad="alta",
+        peso_criticidad="3",
+    )
+    result = optimizar_compra_items(presupuesto_total=Decimal("15.00"), horizonte_meses=3, candidates=[candidate])
+    item = result.items[0]
+    assert item.cantidad_recomendada_comprar_ahora == Decimal("0.0001")
+    assert result.presupuesto_utilizado == Decimal("10.00")
+    assert item.cantidad_recomendada_comprar_ahora + item.cantidad_recomendada_postergar == item.cantidad_objetivo
+
+
+def test_precision_de_cantidades_respeta_minimo_no_representable():
+    candidate = _candidate(
+        material_id=1,
+        material_key="ejemplo",
+        cantidad_objetivo="1.0000",
+        precio_actual="100.00",
+        precio_proyectado="120.00",
+        criticidad="alta",
+        peso_criticidad="3",
+        porcentaje_minimo_compra_inmediata=Decimal("0.333333"),
+    )
+    result = optimizar_compra_items(presupuesto_total=Decimal("33.34"), horizonte_meses=3, candidates=[candidate])
+    assert result.items[0].cantidad_recomendada_comprar_ahora == Decimal("0.3334")
+    assert result.presupuesto_utilizado <= result.presupuesto_total

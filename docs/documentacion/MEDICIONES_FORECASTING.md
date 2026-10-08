@@ -1,5 +1,7 @@
 # Mediciones Forecasting
 
+> **Actualización 08/10/2026:** el selector utiliza la [reevaluación ex ante](CORRECCIONES_MVP_20261008.md), con evidencia en `db/benchmarks/mvp_2026_03/`. Los modelos y cifras siguientes se conservan como historial experimental; no describen la selección vigente.
+
 > **Estado de auditoría (28/09/2026): resultados históricos PRELIMINARES.** Las corridas con regresores externos de este documento usaron valores reales del período de test en vez de proyecciones calculadas en el corte de cada fold. Sus MAPE sirven para reconstruir la exploración original, pero NO validan precisión operacional ex ante ni permiten promover un nuevo modelo por mejor desempeño hasta repetir los experimentos con el procedimiento corregido (PR #20). El Prophet base sin regresores no está afectado por esa filtración concreta. Además, la corrida histórica informa 1624 precios de Cemento mientras el CSV canónico actualmente versionado contiene 1626 registros reales; se debe congelar y documentar un único snapshot al recalcular las métricas. Para Membrana Megaflex hay 8 registros reales al corte de marzo de 2026 y un noveno en abril, fuera del período del TFG. Las cifras y clasificaciones que siguen son el registro de mediciones originales, **no recomendaciones vigentes**.
 
 ## Para que sirve este documento

@@ -6,7 +6,6 @@ from sqlalchemy.orm import Session
 
 from app.modules.auth.infrastructure.models import Usuario
 from app.modules.auth.interfaces.dependencies import get_current_user, require_admin
-from app.modules.catalog.application.utils import derive_material_key
 from app.modules.catalog.domain.repositories import MaterialRepository
 from app.modules.catalog.interfaces.dependencies import get_material_repository
 from app.modules.pricing.application.alerts import generar_alertas_proactivas
@@ -53,7 +52,6 @@ from app.modules.pricing.application.series import (
     construir_serie_precios,
     evaluar_anomalias_detectadas,
 )
-from app.modules.pricing.domain.economic_price import net_price_for
 from app.modules.pricing.domain.exceptions import MaterialNotFoundException
 from app.modules.pricing.domain.repositories import PricingRepository
 from app.modules.pricing.infrastructure.models import Alerta, ExternalIndexValue, PrecioHistorico
@@ -187,11 +185,10 @@ def obtener_serie_precios_material(
     if hasta:
         precios = [p for p in precios if p.fecha <= hasta]
 
-    material_key = derive_material_key(material.nombre) if isinstance(material.nombre, str) else ""
     registros = [
         PrecioSerieInput(
             fecha=precio.fecha,
-            precio_normalizado=net_price_for(material_key, precio.precio_normalizado),
+            precio_normalizado=precio.precio_normalizado,
             unidad_base=material.unidad_base,
             fuente=precio.fuente.nombre if precio.fuente else None,
             numero_comprobante=precio.numero_comprobante,
@@ -201,7 +198,7 @@ def obtener_serie_precios_material(
             presentacion_nombre=getattr(getattr(precio, "presentacion", None), "nombre_presentacion", None),
             presentacion_cantidad_base=getattr(getattr(precio, "presentacion", None), "cantidad_base", None),
             presentacion_unidad=getattr(getattr(precio, "presentacion", None), "unidad_presentacion", None),
-            precio_original=net_price_for(material_key, getattr(precio, "precio_original", None)),
+            precio_original=getattr(precio, "precio_original", None),
             moneda=getattr(precio, "moneda", None),
             created_at=getattr(precio, "created_at", None),
         )
@@ -295,11 +292,10 @@ def obtener_variacion_entre_fechas_material(
         raise MaterialNotFoundException(material_id)
 
     precios = pricing_repo.get_historical_prices(material_id, date(2000, 1, 1))
-    material_key = derive_material_key(material.nombre) if isinstance(material.nombre, str) else ""
     registros = [
         PrecioSerieInput(
             fecha=precio.fecha,
-            precio_normalizado=net_price_for(material_key, precio.precio_normalizado),
+            precio_normalizado=precio.precio_normalizado,
             unidad_base=material.unidad_base,
             fuente=precio.fuente.nombre if precio.fuente else None,
             numero_comprobante=precio.numero_comprobante,

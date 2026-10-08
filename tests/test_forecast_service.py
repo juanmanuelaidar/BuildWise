@@ -216,9 +216,9 @@ def test_forecast_con_selector_desactivado_mantiene_comportamiento_actual(monkey
 @pytest.mark.parametrize(
     ("material_id", "nombre", "modelo", "regresores"),
     [
-        (1, "Cemento Portland", "prophet_ipim_icc_var_materials", ("ipim_nivel_general", "icc_var_materials")),
-        (4, "Pastina", "prophet_ipim_cac_labour_force", ("ipim_nivel_general", "cac_labour_force")),
-        (10, "Membrana Megaflex", "prophet_ipim_icc_var_general", ("ipim_nivel_general", "icc_var_general")),
+        (1, "Cemento Portland", "prophet_ipim_nivel_general", ("ipim_nivel_general",)),
+        (4, "Pastina", "prophet_ipim_cac_var_materials", ("ipim_nivel_general", "cac_var_materials")),
+        (10, "Membrana Megaflex", "prophet_ipim_icc_var_materials", ("ipim_nivel_general", "icc_var_materials")),
     ],
 )
 def test_selector_activado_usa_modelo_recomendado(monkeypatch: pytest.MonkeyPatch, material_id: int, nombre: str, modelo: str, regresores: tuple[str, ...]) -> None:
@@ -283,7 +283,9 @@ def test_selector_activado_usa_modelo_recomendado(monkeypatch: pytest.MonkeyPatc
     assert result.seleccion_modelo.material_key == material_key_esperado
     assert result.seleccion_modelo.modelo_resuelto == modelo
     assert tuple(result.seleccion_modelo.regresores_resueltos) == regresores
-    assert result.seleccion_modelo.no_calibrado is False
+    assert result.seleccion_modelo.no_calibrado is True
+    assert result.seleccion_modelo.mape_referencia is None
+    assert "historial actual difiere" in result.seleccion_modelo.advertencia
 
 
 def test_material_no_calibrado_cae_a_prophet_base(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -380,7 +382,7 @@ def test_selector_activado_hace_fallback_por_material_si_no_hay_horizonte_exacto
 
     result = forecast_material(material, 5, object(), usar_selector_modelo=True)
 
-    assert result.modelo == "prophet_ipim_cac_labour_force"
+    assert result.modelo == "prophet_ipim_cac_var_materials"
     assert result.seleccion_modelo is not None
     assert result.seleccion_modelo.material_key == "pastina"
     assert result.seleccion_modelo.origen_decision == "material_default"
@@ -653,9 +655,10 @@ def test_backtesting_forecast_with_regressors(monkeypatch):
 
     from app.modules.pricing.application.forecast_service import backtesting_forecast
     
-    dataset = [ProphetRow(ds=date(2024, (i % 12) + 1, 1), y=100.0) for i in range(36)]
+    fechas = pd.date_range("2024-01-01", periods=36, freq="MS")
+    dataset = [ProphetRow(ds=fecha.date(), y=100.0) for fecha in fechas]
     regresores_df = pd.DataFrame({
-        "ds": [pd.to_datetime(f"2024-{(i % 12) + 1:02d}-01") for i in range(36)],
+        "ds": fechas,
         "r1": [1.0] * 36
     })
     

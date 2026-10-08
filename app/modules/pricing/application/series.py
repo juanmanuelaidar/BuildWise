@@ -1,5 +1,5 @@
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime
 from decimal import ROUND_HALF_UP, Decimal
 from statistics import median
@@ -777,16 +777,8 @@ def _aplicar_anomalias_random_forest(
     if not anomalies:
         return puntos
     return [
-        PuntoSeriePrecio(
-            fecha=punto.fecha,
-            precio_promedio_normalizado=punto.precio_promedio_normalizado,
-            unidad_base=punto.unidad_base,
-            precio_equivalente_25kg=punto.precio_equivalente_25kg,
-            precio_equivalente_50kg=punto.precio_equivalente_50kg,
-            cantidad_registros=punto.cantidad_registros,
-            cantidad_facturas=punto.cantidad_facturas,
-            fuentes=punto.fuentes,
-            variacion_porcentual_anterior=punto.variacion_porcentual_anterior,
+        replace(
+            punto,
             es_anomalia=(anomaly := anomalies.get(index)) is not None,
             severidad_anomalia=anomaly.severidad if anomaly else None,
             motivo_anomalia=anomaly.motivo if anomaly else None,

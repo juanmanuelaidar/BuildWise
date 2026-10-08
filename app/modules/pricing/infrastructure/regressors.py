@@ -1,4 +1,5 @@
 from datetime import date
+from math import isfinite
 from pathlib import Path
 
 from sqlalchemy import select
@@ -118,19 +119,30 @@ def proyectar_regresores_futuros(pd, regresores_historicos, fechas_futuras, colu
         raise ExternalRegressorError("No hay historial suficiente de regresores externos para proyectar el forecast.")
 
     futuros = {"ds": pd.to_datetime(fechas_futuras)}
-    periodos = max(len(historial) - 1, 1)
-
     for columna in columnas:
-        valores = historial[columna].dropna().tolist()
-        if not valores:
+        observados = historial[["ds", columna]].dropna()
+        if observados.empty:
             raise ExternalRegressorError(f"No hay datos del regresor {columna} para proyectar el forecast.")
-
+        valores = observados[columna].tolist()
         ultimo_valor = float(valores[-1])
         primer_valor = float(valores[0])
+        if not all(isfinite(float(valor)) for valor in valores):
+            raise ExternalRegressorError(f"El regresor {columna} contiene valores no finitos.")
+        ultima_fecha = pd.to_datetime(observados["ds"].iloc[-1])
+        primera_fecha = pd.to_datetime(observados["ds"].iloc[0])
+        periodos = max((ultima_fecha.year - primera_fecha.year) * 12 + ultima_fecha.month - primera_fecha.month, 1)
+        pasos = [(fecha.year - ultima_fecha.year) * 12 + fecha.month - ultima_fecha.month for fecha in pd.to_datetime(fechas_futuras)]
+        if any(paso <= 0 for paso in pasos):
+            raise ExternalRegressorError("Las fechas proyectadas deben ser posteriores al ultimo regresor observado.")
+        # Monthly percentage changes are rates, not price/index levels. Persist
+        # their last observed rate; compounding a signed rate is not meaningful.
+        if "var_" in columna or any(float(valor) <= 0 for valor in valores):
+            futuros[columna] = [ultimo_valor] * len(pasos)
+            continue
         tasa_mensual = 0.0 if primer_valor <= 0 else (ultimo_valor / primer_valor) ** (1 / periodos) - 1
         futuros[columna] = [
             ultimo_valor * ((1 + tasa_mensual) ** paso)
-            for paso in range(1, len(fechas_futuras) + 1)
+            for paso in pasos
         ]
 
     return pd.DataFrame(futuros)

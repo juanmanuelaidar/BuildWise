@@ -3,6 +3,7 @@ from copy import deepcopy
 from dataclasses import dataclass, replace
 from datetime import date
 from decimal import Decimal
+from math import isfinite
 from time import monotonic
 
 from fastapi import HTTPException
@@ -18,9 +19,12 @@ from app.modules.pricing.application.forecasting import (
     generar_fechas_mensuales,
     inicio_mes_siguiente,
 )
-from app.modules.pricing.application.model_selector import ForecastModelSelection, resolve_model_selection
+from app.modules.pricing.application.model_selector import (
+    BENCHMARK_DATASET_SIGNATURES,
+    ForecastModelSelection,
+    resolve_model_selection,
+)
 from app.modules.pricing.application.series import PrecioSerieInput, PuntoSeriePrecio, construir_serie_mensual
-from app.modules.pricing.domain.economic_price import economic_price_rule_for
 from app.modules.pricing.domain.exceptions import (
     ExternalRegressorUnavailableError,
     ForecastSnapshotRequired,
@@ -43,6 +47,7 @@ FORECAST_REGRESSOR_NOTE = "Escenario base: dolar oficial, dolar mayorista e IPC 
 FORECAST_SELECTOR_DISABLED_SIGNATURE = "selector-off"
 FORECAST_SELECTOR_ENABLED_SIGNATURE = "selector-on"
 FORECAST_SELECTOR_FALLBACK_ORIGIN = "fallback_regresores"
+FORECAST_EVALUATION_VERSION = "ex-ante-v2"
 
 
 @dataclass(frozen=True)
@@ -55,7 +60,6 @@ class ForecastMaterialResult:
     seleccion_modelo: ForecastSelectionRead | None = None
     serie_mensual: list[PuntoSeriePrecio] | None = None
     resolution_source: str = "computed"
-    economic_scale_applied: bool = False
 
 
 @dataclass(frozen=True)
@@ -92,6 +96,9 @@ def _a_dataframe(pd, filas):
 
 def construir_firma_dataset(dataset: list) -> str:
     digest = hashlib.sha256()
+    # Pre-correction snapshots contain ex-post errors and obsolete anomalies.
+    digest.update(FORECAST_EVALUATION_VERSION.encode())
+    digest.update(repr(sorted(BEST_PROPHET_CONFIG.items())).encode())
     for fila in dataset:
         digest.update(f"{fila.ds.isoformat()}|{fila.y:.8f}".encode())
     return digest.hexdigest()
@@ -100,7 +107,11 @@ def construir_firma_dataset(dataset: list) -> str:
 def _descripcion_regresores(regresores: tuple[str, ...]) -> str:
     if not regresores:
         return "Escenario base sin regresores externos."
-    return f"Regresores resueltos: {', '.join(regresores)}."
+    return (
+        f"Regresores: {', '.join(regresores)}. Valores futuros estimados desde el historial: "
+        "crecimiento compuesto para niveles y persistencia para tasas mensuales. "
+        "No se conservan fechas de publicacion para verificar disponibilidad historica."
+    )
 
 
 def _selection_to_metadata(selection: ForecastModelSelection, *, advertencia: str | None = None) -> ForecastSelectionRead:
@@ -115,8 +126,23 @@ def _selection_to_metadata(selection: ForecastModelSelection, *, advertencia: st
         origen_decision=selection.origen_decision,
         justificacion=selection.justificacion,
         no_calibrado=selection.no_calibrado,
-        advertencia=advertencia,
+        advertencia=advertencia or (selection.justificacion if selection.no_calibrado else None),
     )
+
+
+def _validar_referencia_dataset(result: ForecastMaterialResult, material_key: str, signature: str) -> ForecastMaterialResult:
+    metadata = result.seleccion_modelo
+    if metadata is None or BENCHMARK_DATASET_SIGNATURES.get(material_key) == signature:
+        return result
+    warning = "El historial actual difiere del dataset evaluado; no hay metricas de referencia validas para este historial."
+    return replace(result, seleccion_modelo=metadata.model_copy(update={
+        "mape_referencia": None,
+        "mae_referencia": None,
+        "folds": None,
+        "confiabilidad": "no_calibrada",
+        "no_calibrado": True,
+        "advertencia": f"{metadata.advertencia or ''} {warning}".strip(),
+    }))
 
 
 def _fallback_selection_for_missing_regressors(
@@ -234,58 +260,6 @@ def limpiar_forecast_cache() -> None:
     _forecast_cache.clear()
 
 
-def _scale_forecast_result_for_economic_price(
-    result: ForecastMaterialResult,
-    material_key: str,
-) -> ForecastMaterialResult:
-    rule = economic_price_rule_for(material_key)
-    if rule is None or result.economic_scale_applied:
-        return result
-
-    def scale(value: Decimal | None) -> Decimal | None:
-        return rule.net_price(value) if value is not None else None
-
-    scaled_points = [
-        point.model_copy(
-            update={
-                "precio_lista_proyectado": point.precio_proyectado,
-                "precio_proyectado": scale(point.precio_proyectado),
-                "precio_optimista": scale(point.precio_optimista),
-                "precio_pesimista": scale(point.precio_pesimista),
-                "precio_equivalente_25kg": scale(point.precio_equivalente_25kg),
-                "precio_equivalente_50kg": scale(point.precio_equivalente_50kg),
-            }
-        )
-        for point in result.forecast
-    ]
-    scaled_series = None
-    if result.serie_mensual is not None:
-        monetary_fields = (
-            "precio_promedio_normalizado",
-            "precio_equivalente_25kg",
-            "precio_equivalente_50kg",
-            "precio_esperado_anomalia",
-            "rango_esperado_min_anomalia",
-            "rango_esperado_max_anomalia",
-            "precio_original",
-        )
-        scaled_series = [
-            replace(point, **{field: scale(getattr(point, field)) for field in monetary_fields})
-            if isinstance(point, PuntoSeriePrecio)
-            else point
-            for point in result.serie_mensual
-        ]
-
-    return replace(
-        result,
-        dataset=[ProphetRow(ds=row.ds, y=float(rule.net_price(Decimal(str(row.y))))) for row in result.dataset],
-        metricas=result.metricas.model_copy(update={"mae": scale(result.metricas.mae)}),
-        forecast=scaled_points,
-        serie_mensual=scaled_series,
-        economic_scale_applied=True,
-    )
-
-
 def _cargar_forecast_cacheado_o_snapshot(
     *,
     material_id: int,
@@ -329,11 +303,13 @@ def serie_mensual_material(material: Material, pricing_repo: PricingRepository):
             unidad_base=material.unidad_base,
             fuente=precio.fuente.nombre if precio.fuente else None,
             numero_comprobante=precio.numero_comprobante,
+            origen_dato=getattr(precio, "origen_dato", None),
+            metodo_estimacion=getattr(precio, "metodo_estimacion", None),
         )
         for precio in pricing_repo.get_historical_prices(material.id, FORECAST_DATASET_START)
         if precio.fecha <= date.today()
     ]
-    return construir_serie_mensual(registros)
+    return construir_serie_mensual(registros, material_nombre=material.nombre)
 
 
 def backtesting_forecast(pd, Prophet, dataset, regresores_df, horizonte_meses: int, regresores: tuple[str, ...]) -> ForecastMetricasRead:
@@ -360,7 +336,9 @@ def backtesting_forecast(pd, Prophet, dataset, regresores_df, horizonte_meses: i
             futuro = modelo.make_future_dataframe(periods=len(test_df), freq="MS")
             forecast = modelo.predict(futuro)[["ds", "yhat"]]
 
-        evaluacion = test_df.merge(forecast, on="ds", how="left")
+        evaluacion = test_df.merge(forecast, on="ds", how="left", validate="one_to_one")
+        if any(not isfinite(float(value)) for value in evaluacion["yhat"]) or (evaluacion["y"] <= 0).any():
+            raise HTTPException(status_code=422, detail="El backtesting requiere precios positivos y predicciones completas y finitas.")
         evaluacion["abs_error"] = (evaluacion["y"] - evaluacion["yhat"]).abs()
         evaluacion["ape"] = evaluacion["abs_error"] / evaluacion["y"] * 100
         abs_errors.extend(evaluacion["abs_error"].tolist())
@@ -479,7 +457,7 @@ def forecast_material(
             dataset_signature=dataset_signature,
         )
         if forecast_cacheado is not None:
-            return _scale_forecast_result_for_economic_price(forecast_cacheado, material_key)
+            return forecast_cacheado
 
         _require_synchronous_compute_allowed(material, horizonte_meses)
 
@@ -497,7 +475,7 @@ def forecast_material(
             serie_mensual=puntos,
         )
         cached_result = guardar_forecast_cacheado(material.id, horizonte_meses, dataset_signature, forecast_result)
-        return _scale_forecast_result_for_economic_price(cached_result, material_key)
+        return cached_result
 
     selection = resolve_model_selection(material_key, horizonte_meses)
     dataset_signature = f"{signature_base}:{FORECAST_SELECTOR_ENABLED_SIGNATURE}:{selection.modelo}"
@@ -507,7 +485,7 @@ def forecast_material(
         dataset_signature=dataset_signature,
     )
     if forecast_cacheado is not None:
-        return _scale_forecast_result_for_economic_price(forecast_cacheado, material_key)
+        return _validar_referencia_dataset(forecast_cacheado, material_key, signature_base)
 
     cmdstanpy, pd, Prophet, CmdStanPyBackend, IStanBackend = importar_dependencias_forecast()
     plan = _resolver_plan_ejecucion(material_key, horizonte_meses, usar_selector_modelo, pd)
@@ -519,7 +497,7 @@ def forecast_material(
         dataset_signature=dataset_signature,
     )
     if forecast_cacheado is not None:
-        return _scale_forecast_result_for_economic_price(forecast_cacheado, material_key)
+        return _validar_referencia_dataset(forecast_cacheado, material_key, signature_base)
 
     _require_synchronous_compute_allowed(material, horizonte_meses)
     configurar_cmdstan(cmdstanpy, CmdStanPyBackend, IStanBackend)
@@ -535,7 +513,7 @@ def forecast_material(
         serie_mensual=puntos,
     )
     cached_result = guardar_forecast_cacheado(material.id, horizonte_meses, dataset_signature, forecast_result)
-    return _scale_forecast_result_for_economic_price(cached_result, material_key)
+    return _validar_referencia_dataset(cached_result, material_key, signature_base)
 
 
 def precomputar_forecasts_materiales(

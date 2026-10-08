@@ -4,12 +4,14 @@
 
 ## Antes de ejecutar
 
-1. Resolver el import ausente `app.modules.pricing.domain.economic_price` introducido en el commit `7079a2a`, utilizando las reglas comerciales reales. La suite CI integral no podrá validar el repositorio hasta entonces. No reemplazar el módulo con un stub que cambie los precios de forma silenciosa.
+1. La dependencia ausente `economic_price` se resolvió retirando la conversión incompleta y conservando los precios registrados. Ver [correcciones y resultados del 08/10/2026](CORRECCIONES_MVP_20261008.md). No introducir nuevas reglas comerciales sin definición de dominio.
 2. Guardar el SHA del commit utilizado y el hash del dataset canónico: `sha256sum db/bootstrap/cemento_portland_historico.csv`. Actualmente el CSV versionado contiene 1626 registros entre 2022-01-03 y 2026-03-25; el reporte experimental anterior indicaba 1624. La diferencia exige reconstruir las métricas con **un único** snapshot, no corregir la tabla por suposición.
 3. Reconstruir la base mínima siguiendo la secuencia versionada del proyecto: `alembic upgrade head`, `python -m app.operations.bootstrap.seed`, importadores canónicos de cemento, pastina y membrana, carga del snapshot de índices y `python -m app.operations.bootstrap.validate_minimum_dataset`.
 4. Verificar dependencias de Prophet y CmdStan. Conservar el snapshot exacto y registrar fechas de publicación de regresores, si están disponibles. **La proyección por fold elimina el uso de los valores del período de prueba, pero las fuentes actuales no permiten demostrar la disponibilidad pública efectiva de todos los índices en sus meses de referencia.**
 
 ## Ejecución y criterios
+
+La reevaluación congelada ejecutada está en `db/benchmarks/mvp_2026_03/`. Se reproduce sin base de datos con `python -m app.experiments.pricing.mvp_reassessment`; los experimentos adicionales indicados a continuación requieren la base mínima.
 
 1. Ejecutar `pytest -q tests/test_series.py tests/test_temporal_leakage_tesis.py -o addopts=''` y luego la suite integral. No interpretar una cobertura alta como validación del desempeño predictivo.
 2. Ejecutar el experimento de referencia con la corrección ex ante, por ejemplo: `python -m app.experiments.pricing.cemento_forecast_plateau --material "Cemento Portland" --horizontes 3 6 12 --modelos prophet_ipim_nivel_general prophet_ipim_icc_var_materials --sin-ensemble --output-csv tmp/experiments/cemento_exante.csv`. Verificar previamente que IPIM e ICC estén cargados y alineados. Para el ensemble y variantes adicionales, repetir con la batería experimental pertinente.

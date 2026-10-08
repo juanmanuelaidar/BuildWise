@@ -56,6 +56,10 @@ export function ForecastModelDetails({ selection, title = "Detalles del modelo",
             />
           </Box>
 
+          {selection.advertencia ? (
+            <Alert severity="warning">{selection.advertencia}</Alert>
+          ) : null}
+
           <Accordion defaultExpanded={!compact} disableGutters elevation={0} sx={{ bgcolor: "transparent", "&:before": { display: "none" } }}>
             <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={{ px: 0 }}>
               <Typography variant="body2" fontWeight={800} color="text.secondary">
@@ -81,11 +85,6 @@ export function ForecastModelDetails({ selection, title = "Detalles del modelo",
                 />
               </Box>
 
-              {selection.advertencia ? (
-                <Alert severity="warning" sx={{ mt: 2 }}>
-                  {selection.advertencia}
-                </Alert>
-              ) : null}
             </AccordionDetails>
           </Accordion>
         </Stack>
