@@ -1,0 +1,136 @@
+{
+  "cemento-portland": [
+    {
+      "fecha": "2023-12-01",
+      "precio": "70.9061",
+      "esperado": "30.3052",
+      "severidad": "alta",
+      "score": 4,
+      "residuo_pct": "133.9730"
+    },
+    {
+      "fecha": "2024-01-01",
+      "precio": "89.8788",
+      "esperado": "54.2632",
+      "severidad": "media",
+      "score": 3,
+      "residuo_pct": "65.6348"
+    },
+    {
+      "fecha": "2024-02-01",
+      "precio": "112.2590",
+      "esperado": "54.3649",
+      "severidad": "media",
+      "score": 3,
+      "residuo_pct": "106.4917"
+    },
+    {
+      "fecha": "2024-03-01",
+      "precio": "129.2336",
+      "esperado": "55.0734",
+      "severidad": "media",
+      "score": 3,
+      "residuo_pct": "134.6569"
+    },
+    {
+      "fecha": "2024-04-01",
+      "precio": "134.4426",
+      "esperado": "55.0734",
+      "severidad": "media",
+      "score": 3,
+      "residuo_pct": "144.1152"
+    }
+  ],
+  "pastina": [
+    {
+      "fecha": "2022-09-01",
+      "precio": "258.3700",
+      "esperado": "180.4616",
+      "severidad": "alta",
+      "score": 3,
+      "residuo_pct": "43.1717"
+    },
+    {
+      "fecha": "2022-10-01",
+      "precio": "283.7300",
+      "esperado": "180.7500",
+      "severidad": "alta",
+      "score": 2,
+      "residuo_pct": "56.9737"
+    },
+    {
+      "fecha": "2023-12-01",
+      "precio": "1050.4700",
+      "esperado": "458.3756",
+      "severidad": "alta",
+      "score": 4,
+      "residuo_pct": "129.1723"
+    }
+  ],
+  "membrana-megaflex": [
+    {
+      "fecha": "2022-09-01",
+      "precio": "524.1545",
+      "esperado": "400.1351",
+      "severidad": "media",
+      "score": 2,
+      "residuo_pct": "30.9944"
+    },
+    {
+      "fecha": "2022-10-01",
+      "precio": "557.1765",
+      "esperado": "400.1351",
+      "severidad": "alta",
+      "score": 2,
+      "residuo_pct": "39.2471"
+    },
+    {
+      "fecha": "2023-03-01",
+      "precio": "859.7320",
+      "esperado": "526.7357",
+      "severidad": "media",
+      "score": 3,
+      "residuo_pct": "63.2188"
+    },
+    {
+      "fecha": "2023-04-01",
+      "precio": "1067.7870",
+      "esperado": "523.8181",
+      "severidad": "alta",
+      "score": 4,
+      "residuo_pct": "103.8469"
+    },
+    {
+      "fecha": "2023-05-01",
+      "precio": "1151.0735",
+      "esperado": "525.9399",
+      "severidad": "media",
+      "score": 3,
+      "residuo_pct": "118.8603"
+    },
+    {
+      "fecha": "2023-06-01",
+      "precio": "1220.1375",
+      "esperado": "532.4824",
+      "severidad": "media",
+      "score": 3,
+      "residuo_pct": "129.1414"
+    },
+    {
+      "fecha": "2023-12-01",
+      "precio": "2518.5555",
+      "esperado": "1059.9534",
+      "severidad": "media",
+      "score": 3,
+      "residuo_pct": "137.6100"
+    },
+    {
+      "fecha": "2024-02-01",
+      "precio": "5296.7140",
+      "esperado": "1915.4995",
+      "severidad": "media",
+      "score": 3,
+      "residuo_pct": "176.5187"
+    }
+  ]
+}

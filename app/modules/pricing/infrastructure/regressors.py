@@ -1,4 +1,5 @@
 from datetime import date
+from math import isfinite
 from pathlib import Path
 
 from sqlalchemy import select
@@ -118,19 +119,66 @@ def proyectar_regresores_futuros(pd, regresores_historicos, fechas_futuras, colu
         raise ExternalRegressorError("No hay historial suficiente de regresores externos para proyectar el forecast.")
 
     futuros = {"ds": pd.to_datetime(fechas_futuras)}
-    periodos = max(len(historial) - 1, 1)
-
     for columna in columnas:
-        valores = historial[columna].dropna().tolist()
-        if not valores:
+        observados = historial[["ds", columna]].dropna()
+        if observados.empty:
             raise ExternalRegressorError(f"No hay datos del regresor {columna} para proyectar el forecast.")
-
+        valores = observados[columna].tolist()
         ultimo_valor = float(valores[-1])
         primer_valor = float(valores[0])
+        if not all(isfinite(float(valor)) for valor in valores):
+            raise ExternalRegressorError(f"El regresor {columna} contiene valores no finitos.")
+        ultima_fecha = pd.to_datetime(observados["ds"].iloc[-1])
+        primera_fecha = pd.to_datetime(observados["ds"].iloc[0])
+        periodos = max((ultima_fecha.year - primera_fecha.year) * 12 + ultima_fecha.month - primera_fecha.month, 1)
+        pasos = [(fecha.year - ultima_fecha.year) * 12 + fecha.month - ultima_fecha.month for fecha in pd.to_datetime(fechas_futuras)]
+        if any(paso <= 0 for paso in pasos):
+            raise ExternalRegressorError("Las fechas proyectadas deben ser posteriores al ultimo regresor observado.")
+        # Monthly percentage changes are rates, not price/index levels. Persist
+        # their last observed rate; compounding a signed rate is not meaningful.
+        if "var_" in columna or any(float(valor) <= 0 for valor in valores):
+            futuros[columna] = [ultimo_valor] * len(pasos)
+            continue
         tasa_mensual = 0.0 if primer_valor <= 0 else (ultimo_valor / primer_valor) ** (1 / periodos) - 1
         futuros[columna] = [
             ultimo_valor * ((1 + tasa_mensual) ** paso)
-            for paso in range(1, len(fechas_futuras) + 1)
+            for paso in pasos
         ]
 
     return pd.DataFrame(futuros)
+
+
+def preparar_regresores_para_fold(pd, train_df, test_df, regresores_df, columnas: tuple[str, ...]):
+    """Reconstruye regresores ex ante: nunca lee los valores reales del test."""
+    if regresores_df is None or not columnas:
+        raise ExternalRegressorError("Se requieren regresores historicos y columnas para evaluar este fold.")
+    fecha_corte = pd.to_datetime(train_df["ds"]).max()
+    historicos = regresores_df[regresores_df["ds"] <= fecha_corte][["ds", *columnas]].copy().sort_values("ds")
+    if historicos.empty:
+        raise ExternalRegressorError("No hay regresores disponibles hasta el corte del fold.")
+
+    train_reg = train_df[["ds", "y"]].merge(historicos, on="ds", how="left").sort_values("ds")
+    for columna in columnas:
+        # Solo se imputan valores de entrenamiento, nunca se rellena con el test.
+        train_reg[columna] = train_reg[columna].ffill()
+        if train_reg[columna].isna().any():
+            raise ExternalRegressorError(f"Faltan valores de entrenamiento del regresor {columna}.")
+
+    # Si el ultimo regresor disponible es anterior al corte, proyectar tambien
+    # los meses intermedios para no desplazar artificialmente el horizonte.
+    ultimo_regresor = pd.to_datetime(historicos["ds"]).max()
+    fechas_a_proyectar = pd.date_range(
+        start=ultimo_regresor + pd.DateOffset(months=1),
+        end=pd.to_datetime(test_df["ds"]).max(),
+        freq="MS",
+    )
+    estimados = proyectar_regresores_futuros(pd, historicos, fechas_a_proyectar, columnas)
+    futuro_test = test_df[["ds"]].merge(estimados, on="ds", how="left")
+    if futuro_test[list(columnas)].isna().any().any():
+        raise ExternalRegressorError("No fue posible proyectar todos los regresores del fold.")
+
+    futuro = pd.concat(
+        [train_reg[["ds", *columnas]], futuro_test[["ds", *columnas]]],
+        ignore_index=True,
+    )
+    return train_reg[["ds", "y", *columnas]], futuro

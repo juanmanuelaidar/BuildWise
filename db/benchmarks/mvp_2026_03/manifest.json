@@ -1,0 +1,69 @@
+{
+  "cutoff": "2026-03-31",
+  "start": "2022-01-01",
+  "evaluation_protocol": "ex-ante-v2",
+  "sources": {
+    "db/bootstrap/cemento_portland_historico.csv": "25724d89805d04d8895a6f6c328cf1d70b4e8716bdfbe72cabf77cabeb01c41b",
+    "db/bootstrap/ipim_nivel_general_historico.csv": "f05c4cea24c875ff55b6d7252ea5dc5d0cf67d296a0fc4b17646ecfb549c4131",
+    "tmp/experiments/icc_historico.csv": "05cb8bbc39c2967ee334c458a1331910e97b9519e15e0ee135617d7d6071ed66",
+    "tmp/experiments/cac_historico.csv": "31fe6213f65019abf7163384eb3130f89ffcde19fcecb5493d789a055bbf64d6",
+    "app/operations/bootstrap/import_pastina.py": "7e9dc748d8bf8712b7b4f23137341a548d7e5d456f6dfc3a544c65d8f7ebec19",
+    "app/operations/bootstrap/import_membrana_megaflex.py": "891834472973c08a4727613c157bb3f42327c7a7a555db015dace91f1b4628d0"
+  },
+  "implementation": {
+    "app/modules/pricing/application/series.py": "4d7ba01142fcf9927d24794694b8465fc0850a134efdf0267800df72c4bc43dd",
+    "app/modules/pricing/application/forecast_service.py": "f342916fde8f31407a7cd8063cff178c5c77c10a1e4ec906bb2a8a63d659b78a",
+    "app/modules/pricing/infrastructure/regressors.py": "db53313eb72eb08d0e4d2f36d7b3bb2c62d377ef39b320bde0d7274b3cb0adba",
+    "app/experiments/pricing/mvp_reassessment.py": "1dd40ccfb755f9d656dd2667efbbcfc89ac9e761c58613ddedd82d70c6d4fdf5",
+    "app/experiments/pricing/mvp_snapshots.py": "8b8ff494ab32a2f45d1093c80005ef01183f7a94d9de6b8b2164c7b187f1267a"
+  },
+  "prophet_config": {
+    "daily_seasonality": false,
+    "weekly_seasonality": false,
+    "yearly_seasonality": false,
+    "changepoint_prior_scale": 0.01,
+    "seasonality_prior_scale": 1.0,
+    "seasonality_mode": "additive"
+  },
+  "seed": 42,
+  "materials": {
+    "cemento-portland": {
+      "records": 1626,
+      "real": 1626,
+      "estimated": 0,
+      "months": 51,
+      "dataset_signature": "5a00a534c944ced5e961ec4e5e36593981979ea59fcdb9add136e667d0e293e0"
+    },
+    "pastina": {
+      "records": 51,
+      "real": 10,
+      "estimated": 41,
+      "months": 51,
+      "dataset_signature": "b83cd6d603e2498ebc846672967b6c013405eeddf088c238ea34ca56bb4bd70d"
+    },
+    "membrana-megaflex": {
+      "records": 51,
+      "real": 8,
+      "estimated": 43,
+      "months": 51,
+      "dataset_signature": "aec313e9f8bfdfdf50e3b2800525dafc1e5011c7ca35698c6af9ea5008670de8"
+    }
+  },
+  "dependencies": {
+    "prophet": "1.1.6",
+    "cmdstanpy": "1.2.5",
+    "numpy": "2.5.3",
+    "pandas": "2.2.3",
+    "scikit-learn": "1.5.2",
+    "pulp": "2.9.0"
+  },
+  "limitations": [
+    "Los snapshots no conservan fechas de publicacion de indices: esta evaluacion elimina valores del test, pero no acredita disponibilidad publica point-in-time.",
+    "La seleccion usa las mismas particiones evaluadas y es exploratoria, sin un test externo independiente.",
+    "Pastina y Membrana contienen precios estimados; sus metricas validan el pipeline, no exactitud sobre precios reales independientes.",
+    "Las pruebas del optimizador demuestran factibilidad, no ahorro economico realizado."
+  ],
+  "source_commit": "7e541d351f8502d0bde7598f27a17bca4b450322",
+  "source_worktree_dirty": true,
+  "benchmark_sha256": "fc2ff54433f32466de26dadcfe363aad5a228f7b74426b56c686a5827f445590"
+}

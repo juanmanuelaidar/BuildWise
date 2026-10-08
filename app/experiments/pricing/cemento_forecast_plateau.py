@@ -18,6 +18,7 @@ from app.experiments.pricing.common import (
 )
 from app.modules.pricing.application.backtesting import TimeSeriesFold, construir_folds_temporales
 from app.modules.pricing.application.forecasting import BEST_PROPHET_CONFIG, ProphetRow
+from app.modules.pricing.infrastructure.regressors import preparar_regresores_para_fold
 
 
 DEFAULT_MATERIAL_NAME = "Cemento Portland"
@@ -285,6 +286,17 @@ def _fold_to_frames(pd, base_df, fold: TimeSeriesFold):
     test_dates = {pd.to_datetime(item.ds) for item in fold.test}
     train_df = base_df[base_df["ds"].isin(train_dates)].copy().sort_values("ds").reset_index(drop=True)
     test_df = base_df[base_df["ds"].isin(test_dates)].copy().sort_values("ds").reset_index(drop=True)
+    # Todos los candidatos reciben los mismos regresores estimados ex ante.
+    # El y real del test se conserva unicamente para calcular las metricas.
+    columnas = tuple(col for col in base_df.columns if col not in {"ds", "y"})
+    if columnas:
+        train_reg, futuro = preparar_regresores_para_fold(
+            pd, train_df, test_df, base_df[["ds", *columnas]], columnas
+        )
+        for columna in columnas:
+            train_df[columna] = train_reg[columna].to_numpy()
+        test_estimado = futuro[futuro["ds"].isin(test_df["ds"])][["ds", *columnas]]
+        test_df = test_df.drop(columns=list(columnas)).merge(test_estimado, on="ds", how="left")
     return train_df, test_df
 
 

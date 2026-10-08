@@ -305,6 +305,8 @@ Verificacion enfocada del DSS:
 
 ## Documentacion
 
+- [Correcciones y reevaluación del MVP (08/10/2026)](docs/documentacion/CORRECCIONES_MVP_20261008.md): cambios de código, métricas ex ante, límites y actualización de snapshots.
+
 - [docs/documentacion/MEDICIONES_FORECASTING.md](docs/documentacion/MEDICIONES_FORECASTING.md): metricas, backtesting y comparativas
 - [docs/documentacion/ENTREGABLE_METODOLOGIA_TIF3.md](docs/documentacion/ENTREGABLE_METODOLOGIA_TIF3.md): borrador principal del marco metodologico y analisis de resultados
 - [docs/documentacion/GUIA_MARCO_METODOLOGICO_Y_RESULTADOS.md](docs/documentacion/GUIA_MARCO_METODOLOGICO_Y_RESULTADOS.md): lineamientos de escritura segun TIF 3

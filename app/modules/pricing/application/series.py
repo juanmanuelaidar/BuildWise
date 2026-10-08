@@ -1,5 +1,5 @@
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime
 from decimal import ROUND_HALF_UP, Decimal
 from statistics import median
@@ -210,11 +210,9 @@ ANOMALY_FEATURE_LABELS = [
     "promedio móvil 6 observaciones",
     "dispersión reciente 3 observaciones",
     "dispersión reciente 6 observaciones",
-    "cantidad de registros",
+    "cantidad de registros previos",
     "referencia estacional",
     "desvío estacional previo",
-    "desvío estacional actual",
-    "desvío de tendencia local",
     "pendiente local",
 ]
 
@@ -364,11 +362,6 @@ def _features_anomalia_mensual(
     mad_6 = _mad(precios_previos_6)
     precio_estacional = float(mismo_mes_anterior.precio_promedio_normalizado) if mismo_mes_anterior else float(anterior.precio_promedio_normalizado)
     desvio_estacional_anterior = _gap_porcentual(float(anterior.precio_promedio_normalizado), precio_estacional)
-    desvio_estacional_actual = (
-        _gap_porcentual(float(punto.precio_promedio_normalizado), precio_estacional) if precio_estacional else 0.0
-    )
-    tendencia_local = _baseline_tendencia_local(puntos, index)
-    desvio_tendencia_local = _gap_porcentual(float(punto.precio_promedio_normalizado), tendencia_local)
     pendiente_local = _gap_porcentual(float(anterior.precio_promedio_normalizado), float(hace_3.precio_promedio_normalizado))
     return [
         float(index),
@@ -385,13 +378,18 @@ def _features_anomalia_mensual(
         sum(precios_previos_6) / len(precios_previos_6) if precios_previos_6 else float(anterior.precio_promedio_normalizado),
         mad_3,
         mad_6,
-        float(punto.cantidad_registros),
+        float(anterior.cantidad_registros),
         precio_estacional,
         desvio_estacional_anterior,
-        desvio_estacional_actual,
-        desvio_tendencia_local,
         pendiente_local,
     ]
+
+
+def _intervalo_reentrenamiento_anomalias(puntos: list[PuntoSeriePrecio]) -> int:
+    """Reentrena con una cadencia apropiada al muestreo mensual o denso."""
+    meses = len({(p.fecha.year, p.fecha.month) for p in puntos})
+    observaciones_por_mes = len(puntos) / max(meses, 1)
+    return 6 if observaciones_por_mes <= 1.5 else 30
 
 
 def _clasificar_severidad_anomalia(residual_pct: Decimal, residual_limit: Decimal, score: int, required_signals: int) -> str:
@@ -553,7 +551,7 @@ def _detectar_anomalias_random_forest(
     variaciones_historial: list[float] = []
     model = None
     last_fit_index = -1
-    refit_interval = max(120, len(puntos) // 8)
+    refit_interval = _intervalo_reentrenamiento_anomalias(puntos)
     max_training_points = 365
     prediction_cache: dict[int, tuple[float, list[float], list[float]]] = {}
     for index in trainable_indexes:
@@ -779,16 +777,8 @@ def _aplicar_anomalias_random_forest(
     if not anomalies:
         return puntos
     return [
-        PuntoSeriePrecio(
-            fecha=punto.fecha,
-            precio_promedio_normalizado=punto.precio_promedio_normalizado,
-            unidad_base=punto.unidad_base,
-            precio_equivalente_25kg=punto.precio_equivalente_25kg,
-            precio_equivalente_50kg=punto.precio_equivalente_50kg,
-            cantidad_registros=punto.cantidad_registros,
-            cantidad_facturas=punto.cantidad_facturas,
-            fuentes=punto.fuentes,
-            variacion_porcentual_anterior=punto.variacion_porcentual_anterior,
+        replace(
+            punto,
             es_anomalia=(anomaly := anomalies.get(index)) is not None,
             severidad_anomalia=anomaly.severidad if anomaly else None,
             motivo_anomalia=anomaly.motivo if anomaly else None,

@@ -1,10 +1,12 @@
 # Anomalias con Random Forest
 
+> **Revisión metodológica de septiembre de 2026:** la versión inicial incluía dos variables del valor objetivo y un intervalo de reentrenamiento demasiado largo; se proponen correcciones en el PR #20. Las marcas históricas deben regenerarse antes de utilizarlas como evidencia de calidad del detector. La dispersión entre árboles y el puntaje de confianza son indicadores heurísticos, no intervalos o probabilidades calibradas. La comparación de precisión/recall/F1 requiere fechas reales etiquetadas.
+
 ## Objetivo
 
 Detectar meses con comportamiento atipico en la serie historica de precios sin depender de un umbral porcentual fijo comun para todos los materiales.
 
-La deteccion se aplica sobre la serie mensual ya normalizada. El resultado se expone en la vista de historial como meses marcados por el modelo, junto con una explicacion breve del residuo detectado.
+La deteccion puede aplicarse tanto sobre una serie mensualizada como sobre una secuencia de observaciones; el resultado corresponde a los puntos realmente evaluados. En la tesis, la serie mensual de Cemento Portland constituye el caso de referencia.
 
 ## Por que no usar un umbral fijo
 
@@ -30,9 +32,9 @@ Para cada material:
 5. El modelo estima el precio esperado para cada mes evaluable.
 6. Se calcula el residuo porcentual entre precio observado y precio esperado.
 7. Se mide la incertidumbre interna del modelo a partir de la dispersion de predicciones entre arboles.
-8. Se marca anomalia cuando el residuo queda fuera de una banda dinamica calculada con IQR sobre los residuos del modelo y supera el margen requerido por la incertidumbre del ensemble.
+8. Se combinan cuatro senales: residuo, variacion temporal, desvio estacional y desvio de tendencia. En la configuracion actual se requieren tres senales, salvo la excepcion de residuo extremo (mas de 1,90 veces su limite) acompañado de al menos dos senales. El umbral del residuo combina reglas robustas, un piso por material y dispersion heuristica del ensemble.
 9. Se expone el rango normal esperado, el tipo operativo de anomalia, una explicacion legible y las variables mas relevantes del Random Forest.
-10. La evaluacion contra fechas confirmadas compara el detector contra un baseline simple de variacion mensual mayor a `8%`.
+10. Solo si se dispone de fechas etiquetadas y confirmadas, puede compararse el detector con el baseline simple de variacion mensual mayor a `8%`.
 
 ## Variables usadas
 
@@ -45,8 +47,10 @@ El modelo usa features simples y trazables:
 - promedio movil corto de precios previos;
 - rezagos de precio y variacion;
 - dispersion robusta reciente;
-- desvio contra tendencia local y referencia estacional;
-- cantidad de registros del mes.
+- distancia estacional calculada exclusivamente con observaciones anteriores;
+- cantidad de registros de la observacion anterior.
+
+Las diferencias entre el precio observado actual y la tendencia o referencia estacional se calculan *despues* de estimar el precio esperado y forman parte de las senales de contraste, no de las variables predictoras del Random Forest.
 
 Estas variables permiten capturar tendencia, estacionalidad simple, inercia de precio y robustez de la muestra mensual.
 
@@ -60,13 +64,13 @@ La regla es:
 residuo porcentual observado > limite dinamico de residuos
 ```
 
-El limite dinamico se calcula con:
+El limite dinamico combina el piso minimo por material y los limites derivados de dos estadisticos robustos:
 
 ```text
-Q3 + 1.5 * IQR
+max(piso, Q3 + 1.5 * IQR, mediana + 3 * MAD)
 ```
 
-donde `IQR` es el rango intercuartil de los residuos porcentuales.
+Donde `IQR` representa el rango intercuartil y `MAD` la desviacion absoluta mediana de los residuos porcentuales acumulados.
 
 Ese limite se vuelve mas conservador si el Random Forest muestra alta dispersion entre sus arboles. En terminos practicos, si el modelo no tiene un precio esperado estable, el sistema exige un residuo mayor antes de marcar una alerta.
 
@@ -74,7 +78,7 @@ Ademas del residuo, la marca requiere evidencia complementaria: variacion mensua
 
 ## Series cortas
 
-Si la serie tiene menos de 6 meses, no se entrena Random Forest y no se fuerzan anomalias.
+Si la serie tiene menos de 6 puntos evaluables, no se entrena Random Forest y no se fuerzan anomalias.
 
 Esto evita marcar puntos atipicos sin evidencia suficiente. En esos casos, la salida conserva la serie y deja `es_anomalia = false`.
 
@@ -85,7 +89,7 @@ Cada punto mensual puede incluir:
 - `es_anomalia`: indica si el mes fue marcado como atipico;
 - `severidad_anomalia`: clasifica la magnitud relativa de la desviacion detectada;
 - `score_anomalia`: cantidad de senales que respaldan la alerta;
-- `confianza_anomalia`: confianza porcentual ajustada por evidencia e incertidumbre del modelo;
+- `confianza_anomalia`: puntaje heuristico ajustado por evidencia y dispersion entre arboles; no representa una probabilidad calibrada;
 - `precio_esperado_anomalia`: estimacion puntual del Random Forest;
 - `rango_esperado_min_anomalia` y `rango_esperado_max_anomalia`: banda normal estimada a partir del limite dinamico de residuo;
 - `residuo_anomalia_pct`: distancia porcentual entre precio observado y esperado;
@@ -103,12 +107,12 @@ Anomalia detectada por Random Forest: precio esperado 120.0000, residuo 35.0000%
 
 ## Comparacion contra baseline
 
-Para defender que Random Forest aporta mas que una regla fija, la evaluacion de anomalias permite cargar fechas confirmadas y calcula metricas para dos enfoques:
+Para comprobar si el procedimiento aporta ventajas frente a una regla fija, la evaluacion de anomalias permite cargar fechas confirmadas y calcular metricas para dos enfoques:
 
 - detector Random Forest con residuo dinamico;
 - baseline simple que marca cualquier mes con variacion mensual mayor al `8%`.
 
-La salida incluye precision, recall, F1, falsos positivos y falsos negativos del detector principal, mas las metricas equivalentes del baseline. Esto permite explicar si Random Forest reduce falsos positivos o mejora la cobertura frente a una regla porcentual fija.
+La salida incluye precision, recall, F1, falsos positivos y falsos negativos del detector principal, mas las metricas equivalentes del baseline. Estas comparaciones solo son concluyentes cuando existe un conjunto de fechas realmente etiquetadas; no deben inferirse ventajas empiricas a partir de los puntajes internos del propio detector.
 
 ## Limitaciones
 

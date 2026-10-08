@@ -1,0 +1,104 @@
+[
+  {
+    "presupuesto_total": "15.00",
+    "presupuesto_utilizado": "10.00",
+    "presupuesto_restante": "5.00",
+    "horizonte_meses": 3,
+    "estado_optimizacion": "OPTIMAL",
+    "items": [
+      {
+        "material_id": 1,
+        "material_key": "ejemplo_controlado",
+        "cantidad_objetivo": "1.0000",
+        "cantidad_recomendada_comprar_ahora": "0.0001",
+        "cantidad_recomendada_postergar": "0.9999",
+        "precio_actual": "100000.00",
+        "precio_proyectado_horizonte": "120000.00",
+        "costo_compra_ahora": "10.00",
+        "costo_futuro_estimado": "119988.00",
+        "ahorro_unitario_estimado": "20000.00",
+        "ahorro_total_estimado": "2.00",
+        "impacto_economico_pct": "20.0000",
+        "accion_recomendada": "COMPRA_PARCIAL",
+        "criticidad": "alta",
+        "peso_criticidad": "3",
+        "confiabilidad": "no_calibrada",
+        "mape": null,
+        "no_calibrado": true,
+        "fecha_base_observada": null
+      }
+    ],
+    "ahorro_total_estimado": "2.00",
+    "justificacion": "La optimizacion prioriza el ahorro futuro evitado ponderado por criticidad, con variables explicitas de compra inmediata y postergada, respetando el presupuesto disponible.",
+    "advertencias": [],
+    "fecha_base_calculo": null
+  },
+  {
+    "presupuesto_total": "120.00",
+    "presupuesto_utilizado": "120.00",
+    "presupuesto_restante": "0.00",
+    "horizonte_meses": 3,
+    "estado_optimizacion": "OPTIMAL",
+    "items": [
+      {
+        "material_id": 1,
+        "material_key": "ejemplo_controlado",
+        "cantidad_objetivo": "1.0000",
+        "cantidad_recomendada_comprar_ahora": "0.0012",
+        "cantidad_recomendada_postergar": "0.9988",
+        "precio_actual": "100000.00",
+        "precio_proyectado_horizonte": "120000.00",
+        "costo_compra_ahora": "120.00",
+        "costo_futuro_estimado": "119856.00",
+        "ahorro_unitario_estimado": "20000.00",
+        "ahorro_total_estimado": "24.00",
+        "impacto_economico_pct": "20.0000",
+        "accion_recomendada": "COMPRA_PARCIAL",
+        "criticidad": "alta",
+        "peso_criticidad": "3",
+        "confiabilidad": "no_calibrada",
+        "mape": null,
+        "no_calibrado": true,
+        "fecha_base_observada": null
+      }
+    ],
+    "ahorro_total_estimado": "24.00",
+    "justificacion": "La optimizacion prioriza el ahorro futuro evitado ponderado por criticidad, con variables explicitas de compra inmediata y postergada, respetando el presupuesto disponible.",
+    "advertencias": [],
+    "fecha_base_calculo": null
+  },
+  {
+    "presupuesto_total": "1000.00",
+    "presupuesto_utilizado": "1000.00",
+    "presupuesto_restante": "0.00",
+    "horizonte_meses": 3,
+    "estado_optimizacion": "OPTIMAL",
+    "items": [
+      {
+        "material_id": 1,
+        "material_key": "ejemplo_controlado",
+        "cantidad_objetivo": "1.0000",
+        "cantidad_recomendada_comprar_ahora": "0.0100",
+        "cantidad_recomendada_postergar": "0.9900",
+        "precio_actual": "100000.00",
+        "precio_proyectado_horizonte": "120000.00",
+        "costo_compra_ahora": "1000.00",
+        "costo_futuro_estimado": "118800.00",
+        "ahorro_unitario_estimado": "20000.00",
+        "ahorro_total_estimado": "200.00",
+        "impacto_economico_pct": "20.0000",
+        "accion_recomendada": "COMPRA_PARCIAL",
+        "criticidad": "alta",
+        "peso_criticidad": "3",
+        "confiabilidad": "no_calibrada",
+        "mape": null,
+        "no_calibrado": true,
+        "fecha_base_observada": null
+      }
+    ],
+    "ahorro_total_estimado": "200.00",
+    "justificacion": "La optimizacion prioriza el ahorro futuro evitado ponderado por criticidad, con variables explicitas de compra inmediata y postergada, respetando el presupuesto disponible.",
+    "advertencias": [],
+    "fecha_base_calculo": null
+  }
+]
