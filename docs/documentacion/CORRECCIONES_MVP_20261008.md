@@ -1,5 +1,7 @@
 # Correcciones del MVP y reevaluación — 8 de octubre de 2026
 
+**Estado posterior a la restauración solicitada:** el pronóstico operativo vuelve al selector, la proyección de índices y el backtesting condicional históricos. Los snapshots se regeneran para esa configuración. Se conservan los arreglos de arranque, presupuesto, procedencia de datos y anomalías. Los resultados ex ante que se documentan a continuación quedan como evidencia de la reevaluación, no como métricas del modo operativo restaurado. Los MAPE históricos utilizan regresores observados durante el test y no acreditan precisión operacional. El borrador de tesis permanece intacto.
+
 Esta entrega corrige el código y conserva el alcance del MVP presentado. El borrador de la tesis todavía no se modifica. Consolida las correcciones temporales de la rama `fix/tesis-validacion-temporal-20260928` con la reparación del runtime, el selector y la precisión del optimizador.
 
 ## Cambios de comportamiento

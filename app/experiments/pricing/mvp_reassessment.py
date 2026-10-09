@@ -21,7 +21,7 @@ from prophet import Prophet
 from app.modules.pricing.application.backtesting import construir_folds_temporales
 from app.modules.pricing.application.forecast_service import (
     FORECAST_EVALUATION_VERSION,
-    construir_firma_dataset,
+    construir_firma_dataset_ex_ante as construir_firma_dataset,
 )
 from app.modules.pricing.application.forecasting import BEST_PROPHET_CONFIG, construir_dataset_prophet
 from app.modules.pricing.application.model_selector import MODEL_REGRESSORS

@@ -47,7 +47,7 @@ def test_regresores_del_test_no_cambian_predictores_ex_ante() -> None:
     assert (futuro_a.tail(3)["ipim"] < 1000).all()
 
 
-def test_backtesting_no_consume_regresor_real_futuro(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_backtesting_historico_es_condicional_a_regresores_observados(monkeypatch: pytest.MonkeyPatch) -> None:
     from app.modules.pricing.application.forecast_service import backtesting_forecast
 
     fechas = pd.date_range("2022-01-01", periods=27, freq="MS")
@@ -81,7 +81,7 @@ def test_backtesting_no_consume_regresor_real_futuro(monkeypatch: pytest.MonkeyP
     resultado = backtesting_forecast(pd, FakeProphet, dataset, regresores, 3, ("ipim",))
     assert resultado.folds == 1
     assert len(futuros_enviados) == 3
-    assert max(futuros_enviados) < 1000
+    assert futuros_enviados == [1_000_000.0] * 3
 
 
 def test_features_del_random_forest_no_contienen_precio_objetivo() -> None:
@@ -107,7 +107,9 @@ def test_random_forest_reentrena_serie_mensual() -> None:
 
 @pytest.mark.parametrize("last_rate", [-2.5, 0.0, 3.0])
 def test_proyeccion_persiste_tasas_mensuales_incluso_negativas(last_rate):
-    from app.modules.pricing.infrastructure.regressors import proyectar_regresores_futuros
+    from app.modules.pricing.infrastructure.regressors import (
+        proyectar_regresores_futuros_ex_ante as proyectar_regresores_futuros,
+    )
 
     history = pd.DataFrame({"ds": pd.to_datetime(["2025-01-01", "2025-02-01"]), "icc_var_materials": [4.0, last_rate]})
     future = proyectar_regresores_futuros(
@@ -117,7 +119,9 @@ def test_proyeccion_persiste_tasas_mensuales_incluso_negativas(last_rate):
 
 
 def test_proyeccion_respeta_meses_transcurridos_con_huecos():
-    from app.modules.pricing.infrastructure.regressors import proyectar_regresores_futuros
+    from app.modules.pricing.infrastructure.regressors import (
+        proyectar_regresores_futuros_ex_ante as proyectar_regresores_futuros,
+    )
 
     history = pd.DataFrame({"ds": pd.to_datetime(["2025-01-01", "2025-03-01"]), "ipc": [100.0, 121.0]})
     future = proyectar_regresores_futuros(pd, history, pd.to_datetime(["2025-05-01"]), ("ipc",))
@@ -126,7 +130,9 @@ def test_proyeccion_respeta_meses_transcurridos_con_huecos():
 
 def test_proyeccion_rechaza_infinito():
     from app.modules.pricing.domain.exceptions import ExternalRegressorError
-    from app.modules.pricing.infrastructure.regressors import proyectar_regresores_futuros
+    from app.modules.pricing.infrastructure.regressors import (
+        proyectar_regresores_futuros_ex_ante as proyectar_regresores_futuros,
+    )
 
     history = pd.DataFrame({"ds": pd.to_datetime(["2025-01-01"]), "ipc": [float("inf")]})
     with pytest.raises(ExternalRegressorError, match="no finitos"):
@@ -188,7 +194,7 @@ def test_snapshots_versionados_coinciden_con_dataset_y_selector():
             snapshot = snapshots[f"{material_id}:{horizon}:{signature}:selector-on:{selection.modelo}"]
             assert len(snapshot["forecast"]) == horizon
             assert snapshot["metricas"]["folds"] >= 2
-            assert snapshot["seleccion_modelo"]["no_calibrado"]
+            assert snapshot["seleccion_modelo"]["modelo_resuelto"] == selection.modelo
             assert snapshot["seleccion_modelo"]["advertencia"]
             assert all(p["origenes_dato"] for p in snapshot["serie_mensual"])
             assert snapshot["forecast"][0]["fecha"] > snapshot["dataset"][-1]["ds"]

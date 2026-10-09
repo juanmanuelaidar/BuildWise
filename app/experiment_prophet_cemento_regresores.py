@@ -9,7 +9,6 @@ from app.experiments.pricing.common import (
     importar_dependencias_prophet,
 )
 from app.modules.pricing.application.backtesting import construir_folds_temporales
-from app.modules.pricing.infrastructure.regressors import preparar_regresores_para_fold
 from app.modules.pricing.application.forecasting import ProphetRow
 
 
@@ -83,11 +82,14 @@ def _evaluar_prophet(pd, Prophet, train: list[ProphetRow], test: list[ProphetRow
         forecast = modelo.predict(futuro)[["ds", "yhat"]]
     else:
         columnas_regresoras = columnas_regresoras or []
-        train_reg, futuro = preparar_regresores_para_fold(
-            pd, train_df, test_df, regresores_df, tuple(columnas_regresoras)
-        )
+        full_df = pd.concat([train_df[["ds", "y"]], test_df[["ds", "y"]]], ignore_index=True)
+        full_df = full_df.merge(regresores_df, on="ds", how="left")
         for columna in columnas_regresoras:
+            full_df[columna] = full_df[columna].ffill().bfill()
             modelo.add_regressor(columna)
+
+        train_reg = full_df.iloc[: len(train_df)][["ds", "y", *columnas_regresoras]].copy()
+        futuro = full_df[["ds", *columnas_regresoras]].copy()
         modelo.fit(train_reg)
         forecast = modelo.predict(futuro)[["ds", "yhat"]]
 
