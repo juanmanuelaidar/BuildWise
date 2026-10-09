@@ -41,8 +41,7 @@ def run():
         if date(2022, 1, 1) <= r.fecha <= date.today()
     ]
     regressors = frozen_regressors()
-    # Bootstrap stores indices through March; for April's material price, ffill
-    # is the same runtime policy. Future steps count from the index's last month.
+    # Use the restored historical projection and conditional evaluation policy.
     snapshots = {}
     for material_id, (key, records) in enumerate(prices.items(), 1):
         material = SimpleNamespace(id=material_id, nombre=MATERIAL_NAMES[key], unidad_base="kg")
@@ -60,7 +59,7 @@ def run():
                 f"selector-on:{selection.modelo}",
             )
             result = replace(_forecast_material(material, horizon, dataset, pd, Prophet, plan), serie_mensual=series)
-            result = _validar_referencia_dataset(result, key, signature)
+            result = _validar_referencia_dataset(result, key)
             snapshots[f"{material_id}:{horizon}:{signature}:{plan.cache_signature}"] = _serializar_result(result)
             print(f"Snapshot {key} {horizon} meses MAPE {result.metricas.mape}", flush=True)
     Path("tmp/forecast_snapshots.json").write_text(json.dumps(snapshots, ensure_ascii=True, indent=2) + "\n")

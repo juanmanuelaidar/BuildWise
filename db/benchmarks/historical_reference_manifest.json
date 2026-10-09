@@ -1,0 +1,21 @@
+{
+  "evaluation_protocol": "historical-conditional-v1",
+  "cutoff": "2026-03-31",
+  "qualification": "Historical conditional errors use observed test-period regressors; not operational validation.",
+  "sources": {
+    "db/bootstrap/cemento_portland_historico.csv": "25724d89805d04d8895a6f6c328cf1d70b4e8716bdfbe72cabf77cabeb01c41b",
+    "db/bootstrap/ipim_nivel_general_historico.csv": "f05c4cea24c875ff55b6d7252ea5dc5d0cf67d296a0fc4b17646ecfb549c4131",
+    "tmp/experiments/icc_historico.csv": "05cb8bbc39c2967ee334c458a1331910e97b9519e15e0ee135617d7d6071ed66",
+    "tmp/experiments/cac_historico.csv": "31fe6213f65019abf7163384eb3130f89ffcde19fcecb5493d789a055bbf64d6",
+    "app/operations/bootstrap/import_pastina.py": "7e9dc748d8bf8712b7b4f23137341a548d7e5d456f6dfc3a544c65d8f7ebec19",
+    "app/operations/bootstrap/import_membrana_megaflex.py": "891834472973c08a4727613c157bb3f42327c7a7a555db015dace91f1b4628d0",
+    "tmp/experiments/cemento_forecast_benchmark_master.csv": "48dca26791796b24c30bb7b806cc8823b3c8cc6212d8572ddec0e76ed3157319",
+    "tmp/experiments/pastina_forecast_plateau.csv": "2238efa8489fca7b05665fbd522a32e37f1abc24a89bf1ec732ee3c23ccb0012",
+    "tmp/experiments/membrana_megaflex_forecast_plateau.csv": "943f91282233829d5453ec5fda0f76a1cfc1c604c075cfa75cdf3367c38506b8"
+  },
+  "reference_dataset_signatures": {
+    "cemento-portland": "5a00a534c944ced5e961ec4e5e36593981979ea59fcdb9add136e667d0e293e0",
+    "pastina": "b83cd6d603e2498ebc846672967b6c013405eeddf088c238ea34ca56bb4bd70d",
+    "membrana-megaflex": "aec313e9f8bfdfdf50e3b2800525dafc1e5011c7ca35698c6af9ea5008670de8"
+  }
+}

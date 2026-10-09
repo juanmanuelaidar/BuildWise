@@ -216,9 +216,9 @@ def test_forecast_con_selector_desactivado_mantiene_comportamiento_actual(monkey
 @pytest.mark.parametrize(
     ("material_id", "nombre", "modelo", "regresores"),
     [
-        (1, "Cemento Portland", "prophet_ipim_nivel_general", ("ipim_nivel_general",)),
-        (4, "Pastina", "prophet_ipim_cac_var_materials", ("ipim_nivel_general", "cac_var_materials")),
-        (10, "Membrana Megaflex", "prophet_ipim_icc_var_materials", ("ipim_nivel_general", "icc_var_materials")),
+        (1, "Cemento Portland", "prophet_ipim_icc_var_materials", ("ipim_nivel_general", "icc_var_materials")),
+        (4, "Pastina", "prophet_ipim_cac_labour_force", ("ipim_nivel_general", "cac_labour_force")),
+        (10, "Membrana Megaflex", "prophet_ipim_icc_var_general", ("ipim_nivel_general", "icc_var_general")),
     ],
 )
 def test_selector_activado_usa_modelo_recomendado(monkeypatch: pytest.MonkeyPatch, material_id: int, nombre: str, modelo: str, regresores: tuple[str, ...]) -> None:
@@ -286,6 +286,7 @@ def test_selector_activado_usa_modelo_recomendado(monkeypatch: pytest.MonkeyPatc
     assert result.seleccion_modelo.no_calibrado is True
     assert result.seleccion_modelo.mape_referencia is None
     assert "historial actual difiere" in result.seleccion_modelo.advertencia
+    assert "MAPE historico condicional" in result.seleccion_modelo.advertencia
 
 
 def test_material_no_calibrado_cae_a_prophet_base(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -382,7 +383,7 @@ def test_selector_activado_hace_fallback_por_material_si_no_hay_horizonte_exacto
 
     result = forecast_material(material, 5, object(), usar_selector_modelo=True)
 
-    assert result.modelo == "prophet_ipim_cac_var_materials"
+    assert result.modelo == "prophet_ipim_cac_labour_force"
     assert result.seleccion_modelo is not None
     assert result.seleccion_modelo.material_key == "pastina"
     assert result.seleccion_modelo.origen_decision == "material_default"

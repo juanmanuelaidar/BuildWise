@@ -119,6 +119,30 @@ def proyectar_regresores_futuros(pd, regresores_historicos, fechas_futuras, colu
         raise ExternalRegressorError("No hay historial suficiente de regresores externos para proyectar el forecast.")
 
     futuros = {"ds": pd.to_datetime(fechas_futuras)}
+    periodos = max(len(historial) - 1, 1)
+
+    for columna in columnas:
+        valores = historial[columna].dropna().tolist()
+        if not valores:
+            raise ExternalRegressorError(f"No hay datos del regresor {columna} para proyectar el forecast.")
+
+        ultimo_valor = float(valores[-1])
+        primer_valor = float(valores[0])
+        tasa_mensual = 0.0 if primer_valor <= 0 else (ultimo_valor / primer_valor) ** (1 / periodos) - 1
+        futuros[columna] = [
+            ultimo_valor * ((1 + tasa_mensual) ** paso)
+            for paso in range(1, len(fechas_futuras) + 1)
+        ]
+
+    return pd.DataFrame(futuros)
+
+
+def proyectar_regresores_futuros_ex_ante(pd, regresores_historicos, fechas_futuras, columnas: tuple[str, ...]):
+    historial = regresores_historicos.sort_values("ds").tail(REGRESSOR_TREND_WINDOW_MONTHS).copy()
+    if historial.empty:
+        raise ExternalRegressorError("No hay historial suficiente de regresores externos para proyectar el forecast.")
+
+    futuros = {"ds": pd.to_datetime(fechas_futuras)}
     for columna in columnas:
         observados = historial[["ds", columna]].dropna()
         if observados.empty:
@@ -148,6 +172,7 @@ def proyectar_regresores_futuros(pd, regresores_historicos, fechas_futuras, colu
     return pd.DataFrame(futuros)
 
 
+
 def preparar_regresores_para_fold(pd, train_df, test_df, regresores_df, columnas: tuple[str, ...]):
     """Reconstruye regresores ex ante: nunca lee los valores reales del test."""
     if regresores_df is None or not columnas:
@@ -172,7 +197,7 @@ def preparar_regresores_para_fold(pd, train_df, test_df, regresores_df, columnas
         end=pd.to_datetime(test_df["ds"]).max(),
         freq="MS",
     )
-    estimados = proyectar_regresores_futuros(pd, historicos, fechas_a_proyectar, columnas)
+    estimados = proyectar_regresores_futuros_ex_ante(pd, historicos, fechas_a_proyectar, columnas)
     futuro_test = test_df[["ds"]].merge(estimados, on="ds", how="left")
     if futuro_test[list(columnas)].isna().any().any():
         raise ExternalRegressorError("No fue posible proyectar todos los regresores del fold.")

@@ -20,7 +20,7 @@ from app.modules.pricing.application.forecasting import (
     inicio_mes_siguiente,
 )
 from app.modules.pricing.application.model_selector import (
-    BENCHMARK_DATASET_SIGNATURES,
+    HISTORICAL_REFERENCE_DATASET_SIGNATURES,
     ForecastModelSelection,
     resolve_model_selection,
 )
@@ -35,7 +35,6 @@ from app.modules.pricing.infrastructure.forecast_runtime import configurar_cmdst
 from app.modules.pricing.infrastructure.forecast_snapshots import cargar_forecast_snapshot, guardar_forecast_snapshot
 from app.modules.pricing.infrastructure.regressors import (
     cargar_regresores_mensuales,
-    preparar_regresores_para_fold,
     proyectar_regresores_futuros,
 )
 from app.modules.pricing.interfaces.schemas import ForecastMetricasRead, ForecastPuntoRead, ForecastSelectionRead
@@ -96,6 +95,15 @@ def _a_dataframe(pd, filas):
 
 def construir_firma_dataset(dataset: list) -> str:
     digest = hashlib.sha256()
+    digest.update(b"historical-conditional-v1")
+    digest.update(repr(sorted(BEST_PROPHET_CONFIG.items())).encode())
+    for fila in dataset:
+        digest.update(f"{fila.ds.isoformat()}|{fila.y:.8f}".encode())
+    return digest.hexdigest()
+
+
+def construir_firma_dataset_ex_ante(dataset: list) -> str:
+    digest = hashlib.sha256()
     # Pre-correction snapshots contain ex-post errors and obsolete anomalies.
     digest.update(FORECAST_EVALUATION_VERSION.encode())
     digest.update(repr(sorted(BEST_PROPHET_CONFIG.items())).encode())
@@ -104,14 +112,12 @@ def construir_firma_dataset(dataset: list) -> str:
     return digest.hexdigest()
 
 
+
 def _descripcion_regresores(regresores: tuple[str, ...]) -> str:
     if not regresores:
         return "Escenario base sin regresores externos."
-    return (
-        f"Regresores: {', '.join(regresores)}. Valores futuros estimados desde el historial: "
-        "crecimiento compuesto para niveles y persistencia para tasas mensuales. "
-        "No se conservan fechas de publicacion para verificar disponibilidad historica."
-    )
+    return f"Regresores resueltos: {', '.join(regresores)}."
+
 
 
 def _selection_to_metadata(selection: ForecastModelSelection, *, advertencia: str | None = None) -> ForecastSelectionRead:
@@ -126,23 +132,24 @@ def _selection_to_metadata(selection: ForecastModelSelection, *, advertencia: st
         origen_decision=selection.origen_decision,
         justificacion=selection.justificacion,
         no_calibrado=selection.no_calibrado,
-        advertencia=advertencia or (selection.justificacion if selection.no_calibrado else None),
+        advertencia=advertencia or (selection.justificacion if selection.no_calibrado else "MAPE historico condicional: se evaluo con regresores observados del periodo de prueba; no valida precision operacional."),
     )
 
 
-def _validar_referencia_dataset(result: ForecastMaterialResult, material_key: str, signature: str) -> ForecastMaterialResult:
+def _validar_referencia_dataset(result: ForecastMaterialResult, material_key: str) -> ForecastMaterialResult:
     metadata = result.seleccion_modelo
-    if metadata is None or BENCHMARK_DATASET_SIGNATURES.get(material_key) == signature:
+    if metadata is None:
         return result
-    warning = "El historial actual difiere del dataset evaluado; no hay metricas de referencia validas para este historial."
-    return replace(result, seleccion_modelo=metadata.model_copy(update={
-        "mape_referencia": None,
-        "mae_referencia": None,
-        "folds": None,
-        "confiabilidad": "no_calibrada",
-        "no_calibrado": True,
-        "advertencia": f"{metadata.advertencia or ''} {warning}".strip(),
-    }))
+    updates = {"no_calibrado": True, "confiabilidad": "no_calibrada"}
+    reference_signature = HISTORICAL_REFERENCE_DATASET_SIGNATURES.get(material_key)
+    if reference_signature != construir_firma_dataset_ex_ante(result.dataset):
+        updates.update({
+            "mape_referencia": None,
+            "mae_referencia": None,
+            "folds": None,
+            "advertencia": f"{metadata.advertencia or ''} El historial actual difiere del dataset evaluado o sus fuentes no se verificaron; no hay metricas de referencia validas para este historial.".strip(),
+        })
+    return replace(result, seleccion_modelo=metadata.model_copy(update=updates))
 
 
 def _fallback_selection_for_missing_regressors(
@@ -313,6 +320,7 @@ def serie_mensual_material(material: Material, pricing_repo: PricingRepository):
 
 
 def backtesting_forecast(pd, Prophet, dataset, regresores_df, horizonte_meses: int, regresores: tuple[str, ...]) -> ForecastMetricasRead:
+    # Historical conditional evaluation uses observed test-period regressors.
     folds = construir_folds_temporales(dataset, min_train_size=24, test_size=horizonte_meses, step_size=horizonte_meses)
     if not folds:
         raise HTTPException(status_code=422, detail="No hay suficientes datos para evaluar ese horizonte de forecast.")
@@ -324,11 +332,14 @@ def backtesting_forecast(pd, Prophet, dataset, regresores_df, horizonte_meses: i
         test_df = _a_dataframe(pd, fold.test)
         modelo = Prophet(stan_backend="CMDSTANPY", **BEST_PROPHET_CONFIG)
         if regresores:
-            train_reg, futuro = preparar_regresores_para_fold(
-                pd, train_df, test_df, regresores_df, regresores
-            )
+            full_df = pd.concat([train_df[["ds", "y"]], test_df[["ds", "y"]]], ignore_index=True)
+            full_df = full_df.merge(regresores_df, on="ds", how="left")
             for columna in regresores:
+                full_df[columna] = full_df[columna].ffill().bfill()
                 modelo.add_regressor(columna)
+
+            train_reg = full_df.iloc[: len(train_df)][["ds", "y", *regresores]].copy()
+            futuro = full_df[["ds", *regresores]].copy()
             modelo.fit(train_reg)
             forecast = modelo.predict(futuro)[["ds", "yhat"]]
         else:
@@ -352,6 +363,7 @@ def backtesting_forecast(pd, Prophet, dataset, regresores_df, horizonte_meses: i
         mape=Decimal(f"{mape:.2f}"),
         efectividad_informal=Decimal(f"{100 - mape:.2f}"),
     )
+
 
 
 def pronosticar_futuro(
@@ -485,7 +497,7 @@ def forecast_material(
         dataset_signature=dataset_signature,
     )
     if forecast_cacheado is not None:
-        return _validar_referencia_dataset(forecast_cacheado, material_key, signature_base)
+        return _validar_referencia_dataset(forecast_cacheado, material_key)
 
     cmdstanpy, pd, Prophet, CmdStanPyBackend, IStanBackend = importar_dependencias_forecast()
     plan = _resolver_plan_ejecucion(material_key, horizonte_meses, usar_selector_modelo, pd)
@@ -497,7 +509,7 @@ def forecast_material(
         dataset_signature=dataset_signature,
     )
     if forecast_cacheado is not None:
-        return _validar_referencia_dataset(forecast_cacheado, material_key, signature_base)
+        return _validar_referencia_dataset(forecast_cacheado, material_key)
 
     _require_synchronous_compute_allowed(material, horizonte_meses)
     configurar_cmdstan(cmdstanpy, CmdStanPyBackend, IStanBackend)
@@ -513,7 +525,7 @@ def forecast_material(
         serie_mensual=puntos,
     )
     cached_result = guardar_forecast_cacheado(material.id, horizonte_meses, dataset_signature, forecast_result)
-    return _validar_referencia_dataset(cached_result, material_key, signature_base)
+    return _validar_referencia_dataset(cached_result, material_key)
 
 
 def precomputar_forecasts_materiales(
