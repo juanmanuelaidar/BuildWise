@@ -17,6 +17,7 @@ from app.modules.pricing.application.forecast_service import (
     _descripcion_regresores,
     _forecast_material,
     _selection_to_metadata,
+    _validar_referencia_dataset,
     construir_firma_dataset,
 )
 from app.modules.pricing.application.forecasting import construir_dataset_prophet
@@ -58,6 +59,7 @@ def run():
                 f"selector-on:{selection.modelo}",
             )
             result = replace(_forecast_material(material, horizon, dataset, pd, Prophet, plan), serie_mensual=series)
+            result = _validar_referencia_dataset(result, key)
             snapshots[f"{material_id}:{horizon}:{signature}:{plan.cache_signature}"] = _serializar_result(result)
             print(f"Snapshot {key} {horizon} meses MAPE {result.metricas.mape}", flush=True)
     Path("tmp/forecast_snapshots.json").write_text(json.dumps(snapshots, ensure_ascii=True, indent=2) + "\n")

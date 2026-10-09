@@ -195,6 +195,11 @@ def test_snapshots_versionados_coinciden_con_dataset_y_selector():
             assert len(snapshot["forecast"]) == horizon
             assert snapshot["metricas"]["folds"] >= 2
             assert snapshot["seleccion_modelo"]["modelo_resuelto"] == selection.modelo
+            assert snapshot["seleccion_modelo"]["no_calibrado"]
+            if horizon not in (3, 6, 12) or key == "membrana-megaflex":
+                assert snapshot["seleccion_modelo"]["mape_referencia"] is None
+            else:
+                assert snapshot["seleccion_modelo"]["mape_referencia"] is not None
             assert snapshot["seleccion_modelo"]["advertencia"]
             assert all(p["origenes_dato"] for p in snapshot["serie_mensual"])
             assert snapshot["forecast"][0]["fecha"] > snapshot["dataset"][-1]["ds"]

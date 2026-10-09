@@ -20,6 +20,7 @@ from app.modules.pricing.application.forecasting import (
     inicio_mes_siguiente,
 )
 from app.modules.pricing.application.model_selector import (
+    HISTORICAL_REFERENCE_DATASET_SIGNATURES,
     ForecastModelSelection,
     resolve_model_selection,
 )
@@ -94,6 +95,8 @@ def _a_dataframe(pd, filas):
 
 def construir_firma_dataset(dataset: list) -> str:
     digest = hashlib.sha256()
+    digest.update(b"historical-conditional-v1")
+    digest.update(repr(sorted(BEST_PROPHET_CONFIG.items())).encode())
     for fila in dataset:
         digest.update(f"{fila.ds.isoformat()}|{fila.y:.8f}".encode())
     return digest.hexdigest()
@@ -131,6 +134,22 @@ def _selection_to_metadata(selection: ForecastModelSelection, *, advertencia: st
         no_calibrado=selection.no_calibrado,
         advertencia=advertencia or (selection.justificacion if selection.no_calibrado else "MAPE historico condicional: se evaluo con regresores observados del periodo de prueba; no valida precision operacional."),
     )
+
+
+def _validar_referencia_dataset(result: ForecastMaterialResult, material_key: str) -> ForecastMaterialResult:
+    metadata = result.seleccion_modelo
+    if metadata is None:
+        return result
+    updates = {"no_calibrado": True, "confiabilidad": "no_calibrada"}
+    reference_signature = HISTORICAL_REFERENCE_DATASET_SIGNATURES.get(material_key)
+    if reference_signature != construir_firma_dataset_ex_ante(result.dataset):
+        updates.update({
+            "mape_referencia": None,
+            "mae_referencia": None,
+            "folds": None,
+            "advertencia": f"{metadata.advertencia or ''} El historial actual difiere del dataset evaluado o sus fuentes no se verificaron; no hay metricas de referencia validas para este historial.".strip(),
+        })
+    return replace(result, seleccion_modelo=metadata.model_copy(update=updates))
 
 
 def _fallback_selection_for_missing_regressors(
@@ -478,7 +497,7 @@ def forecast_material(
         dataset_signature=dataset_signature,
     )
     if forecast_cacheado is not None:
-        return forecast_cacheado
+        return _validar_referencia_dataset(forecast_cacheado, material_key)
 
     cmdstanpy, pd, Prophet, CmdStanPyBackend, IStanBackend = importar_dependencias_forecast()
     plan = _resolver_plan_ejecucion(material_key, horizonte_meses, usar_selector_modelo, pd)
@@ -490,7 +509,7 @@ def forecast_material(
         dataset_signature=dataset_signature,
     )
     if forecast_cacheado is not None:
-        return forecast_cacheado
+        return _validar_referencia_dataset(forecast_cacheado, material_key)
 
     _require_synchronous_compute_allowed(material, horizonte_meses)
     configurar_cmdstan(cmdstanpy, CmdStanPyBackend, IStanBackend)
@@ -506,7 +525,7 @@ def forecast_material(
         serie_mensual=puntos,
     )
     cached_result = guardar_forecast_cacheado(material.id, horizonte_meses, dataset_signature, forecast_result)
-    return cached_result
+    return _validar_referencia_dataset(cached_result, material_key)
 
 
 def precomputar_forecasts_materiales(

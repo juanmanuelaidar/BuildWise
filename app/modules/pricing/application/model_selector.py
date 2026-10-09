@@ -1,11 +1,30 @@
 from __future__ import annotations
 
 import csv
+import hashlib
+import json
 from dataclasses import dataclass, replace
 from decimal import Decimal
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
+HISTORICAL_REFERENCE_MANIFEST = PROJECT_ROOT / "db/benchmarks/historical_reference_manifest.json"
+
+
+def _load_historical_reference_manifest() -> dict:
+    try:
+        manifest = json.loads(HISTORICAL_REFERENCE_MANIFEST.read_text(encoding="utf-8"))
+        if manifest.get("evaluation_protocol") != "historical-conditional-v1":
+            return {}
+        for relative, expected in manifest["sources"].items():
+            if hashlib.sha256((PROJECT_ROOT / relative).read_bytes()).hexdigest() != expected:
+                return {}
+        return manifest
+    except (OSError, ValueError, KeyError, TypeError):
+        return {}
+
+
+HISTORICAL_REFERENCE_DATASET_SIGNATURES = _load_historical_reference_manifest().get("reference_dataset_signatures", {})
 BENCHMARK_SOURCE_FILES: dict[str, tuple[Path, ...]] = {
     "cemento-portland": (PROJECT_ROOT / "tmp/experiments/cemento_forecast_benchmark_master.csv",),
     "pastina": (PROJECT_ROOT / "tmp/experiments/pastina_forecast_plateau.csv",),
@@ -361,7 +380,12 @@ _FALLBACK_GLOBAL = ForecastModelSelection(
 def resolve_model_selection(material_key: str, horizonte_meses: int) -> ForecastModelSelection:
     exacta = _SELECCIONES_EXACTAS.get((material_key, horizonte_meses))
     if exacta is not None:
-        return exacta
+        return replace(
+            exacta,
+            confiabilidad=CONFIABILIDAD_NO_CALIBRADA,
+            no_calibrado=True,
+            justificacion="Configuracion historica restaurada. MAPE historico condicional con regresores observados; sin validacion operacional independiente.",
+        )
 
     por_material = _SELECCIONES_POR_MATERIAL.get(material_key)
     if por_material is not None:
@@ -369,6 +393,10 @@ def resolve_model_selection(material_key: str, horizonte_meses: int) -> Forecast
             por_material,
             material_key=material_key,
             horizonte_meses=horizonte_meses,
+            mape=None,
+            mae=None,
+            folds=None,
+            confiabilidad=CONFIABILIDAD_NO_CALIBRADA,
             origen_decision=ORIGEN_DECISION_MATERIAL_DEFAULT,
             justificacion=(
                 "Se reutiliza la mejor configuracion documentada para este material porque "

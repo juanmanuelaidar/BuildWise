@@ -2,6 +2,16 @@
 
 **Estado posterior a la restauración solicitada:** el pronóstico operativo vuelve al selector, la proyección de índices y el backtesting condicional históricos. Los snapshots se regeneran para esa configuración. Se conservan los arreglos de arranque, presupuesto, procedencia de datos y anomalías. Los resultados ex ante que se documentan a continuación quedan como evidencia de la reevaluación, no como métricas del modo operativo restaurado. Los MAPE históricos utilizan regresores observados durante el test y no acreditan precisión operacional. El borrador de tesis permanece intacto.
 
+## Revisión de las demás correcciones
+
+- **Arranque y CmdStan:** conservar la reparación del import ausente y el runtime compatible. No demuestra mejora predictiva. La definición comercial de precios netos, impuestos y descuentos sigue requiriendo reglas explícitas; retirar la conversión incompleta no resuelve esa decisión de negocio.
+- **Presupuesto:** conservar el control de cantidades con cuatro decimales y la verificación monetaria posterior. El caso precio 100.000 y presupuesto 15 reproduce el exceso anterior y comprueba su corrección. Esto demuestra factibilidad, no ahorro realizado ni compra en presentaciones comerciales indivisibles.
+- **Procedencia y pruebas:** conservar los campos de procedencia al anotar anomalías y aislar los snapshots de las pruebas. Son reparaciones de pérdida de datos y contaminación de resultados.
+- **Anomalías:** conservar la eliminación de predictores que contienen el precio objetivo. La cadencia de seis puntos mensuales o treinta densos es una configuración operativa inicial; no hay etiquetas externas que demuestren que mejora la detección. No presentarla como optimización validada.
+- **Métricas:** conservar los controles aunque se restaure el modelo histórico. Ninguna configuración histórica se presenta como calibrada operacionalmente; los horizontes sin evaluación propia no heredan métricas y un historial distinto pierde las referencias. Un manifiesto separado verifica las fuentes históricas y el conjunto congelado de referencia. Las advertencias son información, no mejoras del pronóstico.
+- **Snapshots:** conservar las firmas del protocolo y la configuración para evitar reutilizar resultados de otro modo. La invalidación automática ante una actualización de índices externos sigue pendiente; requiere recalcular snapshots, no basta el hash de precios.
+- **Pronóstico:** la reevaluación previa cambió tanto el protocolo como la selección operativa de modelos. No se demostró que la nueva política operativa mejorara el pronóstico anterior. Evaluar candidatos en experimentos separados, con iguales cortes y condiciones de información, antes de promover cambios al selector.
+
 Esta entrega corrige el código y conserva el alcance del MVP presentado. El borrador de la tesis todavía no se modifica. Consolida las correcciones temporales de la rama `fix/tesis-validacion-temporal-20260928` con la reparación del runtime, el selector y la precisión del optimizador.
 
 ## Cambios de comportamiento

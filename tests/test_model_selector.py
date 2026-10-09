@@ -21,9 +21,9 @@ def test_resuelve_seleccion_exacta_por_material_y_horizonte() -> None:
     assert selection.mae == Decimal("5.82")
     assert selection.mape == Decimal("4.22")
     assert selection.folds == 9
-    assert selection.confiabilidad == "alta"
+    assert selection.confiabilidad == "no_calibrada"
     assert selection.origen_decision == ORIGEN_DECISION_MATERIAL_HORIZONTE
-    assert selection.no_calibrado is False
+    assert selection.no_calibrado is True
 
 
 def test_resuelve_fallback_por_material_si_no_hay_horizonte_exacto() -> None:
@@ -33,10 +33,10 @@ def test_resuelve_fallback_por_material_si_no_hay_horizonte_exacto() -> None:
     assert selection.horizonte_meses == 5
     assert selection.modelo == "prophet_ipim_cac_labour_force"
     assert selection.regresores == ("ipim_nivel_general", "cac_labour_force")
-    assert selection.mae == Decimal("97.97")
-    assert selection.mape == Decimal("4.27")
-    assert selection.folds == 9
-    assert selection.confiabilidad == "media"
+    assert selection.mae is None
+    assert selection.mape is None
+    assert selection.folds is None
+    assert selection.confiabilidad == "no_calibrada"
     assert selection.origen_decision == ORIGEN_DECISION_MATERIAL_DEFAULT
     assert selection.no_calibrado is True
     assert "no existe una calibracion exacta" in selection.justificacion
@@ -72,3 +72,24 @@ def test_no_se_usa_un_modelo_global_unico_para_todos_los_materiales() -> None:
     assert pastina.modelo == "prophet_ipim_cac_labour_force"
     assert membrana.modelo == "prophet_ipim_icc_var_general"
     assert len({cemento.modelo, pastina.modelo, membrana.modelo}) == 3
+
+
+def test_fuente_historica_modificada_invalida_referencia(tmp_path, monkeypatch) -> None:
+    import hashlib
+    import json
+
+    from app.modules.pricing.application import model_selector
+
+    source = tmp_path / "prices.csv"
+    source.write_text("price\n100\n")
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps({
+        "evaluation_protocol": "historical-conditional-v1",
+        "sources": {"prices.csv": hashlib.sha256(source.read_bytes()).hexdigest()},
+        "reference_dataset_signatures": {"cemento-portland": "reference"},
+    }))
+    monkeypatch.setattr(model_selector, "PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr(model_selector, "HISTORICAL_REFERENCE_MANIFEST", manifest_path)
+    assert model_selector._load_historical_reference_manifest()
+    source.write_text("price\n999\n")
+    assert model_selector._load_historical_reference_manifest() == {}

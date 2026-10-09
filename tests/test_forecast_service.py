@@ -283,7 +283,9 @@ def test_selector_activado_usa_modelo_recomendado(monkeypatch: pytest.MonkeyPatc
     assert result.seleccion_modelo.material_key == material_key_esperado
     assert result.seleccion_modelo.modelo_resuelto == modelo
     assert tuple(result.seleccion_modelo.regresores_resueltos) == regresores
-    assert result.seleccion_modelo.no_calibrado is False
+    assert result.seleccion_modelo.no_calibrado is True
+    assert result.seleccion_modelo.mape_referencia is None
+    assert "historial actual difiere" in result.seleccion_modelo.advertencia
     assert "MAPE historico condicional" in result.seleccion_modelo.advertencia
 
 
